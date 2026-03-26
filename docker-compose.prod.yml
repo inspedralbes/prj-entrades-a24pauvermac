@@ -1,0 +1,119 @@
+version: '3.8'
+
+# --- DOCKER COMPOSE DE PRODUCCIÓN ---
+# En este entorno, las imágenes están "congeladas" y no se montan carpetas locales (excepto para datos).
+
+services:
+  # Base de Datos Relacional
+  mysql:
+    image: mysql:8.0
+    container_name: tiquet_mysql_prod
+    restart: always
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-tiquet_db}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_USER: ${DB_USERNAME:-tiquet_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-tiquet_password}
+    volumes:
+      - mysql_data_prod:/var/lib/mysql
+    networks:
+      - tiquet_network_prod
+
+  # Base de Datos en Memoria
+  redis:
+    image: redis:7-alpine
+    container_name: tiquet_redis_prod
+    restart: always
+    volumes:
+      - redis_data_prod:/data
+    networks:
+      - tiquet_network_prod
+
+  # Framework Backend Laravel
+  laravel-app:
+    build:
+      context: ./backend-laravel
+      target: production
+    container_name: tiquet_laravel_prod
+    restart: always
+    expose:
+      - "9000"
+    depends_on:
+      - mysql
+      - redis
+    env_file:
+      - .env.prod
+    environment:
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - REDIS_HOST=redis
+    volumes:
+      # Volumen compartido: Docker copia el código de la imagen aquí en el primer arranque.
+      # nginx también monta este volumen para garantizar que ambos lean el mismo código.
+      - laravel_code:/var/www/html
+    networks:
+      - tiquet_network_prod
+
+  # Servidor Web para Laravel (Nginx es necesario para conectar con PHP-FPM en producción)
+  # Este servicio servirá el contenido de Laravel en el puerto 8000
+  nginx:
+    image: nginx:alpine
+    container_name: tiquet_nginx_prod
+    restart: always
+    ports:
+      - "8000:80"
+    volumes:
+      # Lee el código desde el mismo volumen compartido que php-fpm
+      - laravel_code:/var/www/html:ro
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - laravel-app
+    networks:
+      - tiquet_network_prod
+
+  # Microservicio Node.js (Socket.io)
+  node-app:
+    build:
+      context: ./backend-node
+      target: production
+    container_name: tiquet_node_prod
+    restart: always
+    ports:
+      - "3000:3000"
+    depends_on:
+      - redis
+    env_file:
+      - .env.prod
+    environment:
+      - REDIS_HOST=redis
+      - PORT=3000
+    networks:
+      - tiquet_network_prod
+
+  # Framework Frontend Nuxt
+  nuxt-app:
+    build:
+      context: ./front-nuxt
+      target: production
+    container_name: tiquet_nuxt_prod
+    restart: always
+    ports:
+      - "3001:3000"
+    # Solo inyectamos las variables que Nuxt realmente necesita.
+    # Nunca le pasamos DB_PASSWORD ni otras credenciales de backend.
+    environment:
+      - NITRO_HOST=0.0.0.0
+      - NITRO_PORT=3000
+      - NUXT_PUBLIC_API_URL=${LARAVEL_API_URL:-https://api.tudominio.com}
+      - NUXT_PUBLIC_SOCKET_URL=${NODE_SOCKET_URL:-https://socket.tudominio.com}
+    networks:
+      - tiquet_network_prod
+
+networks:
+  tiquet_network_prod:
+    driver: bridge
+
+volumes:
+  laravel_code:
+  mysql_data_prod:
+  redis_data_prod:

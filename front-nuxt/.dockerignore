@@ -1,0 +1,27 @@
+# Dependencias (se instalan dentro del contenedor)
+node_modules/
+
+# Archivos de entorno
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# Compilados y caché de Nuxt
+.nuxt/
+.output/
+dist/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Dockerfile y compose
+Dockerfile
+docker-compose*.yml
+
+# Documentación
+README.md

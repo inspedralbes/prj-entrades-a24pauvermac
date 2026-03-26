@@ -1,0 +1,109 @@
+version: '3.8'
+  # docker compose -f docker-compose.yml up --build
+services:
+  # Base de Datos Relacional para Laravel (Persistencia e historial)
+  mysql:
+    image: mysql:8.0
+    container_name: tiquet_mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-tiquet_db}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root}
+      MYSQL_USER: ${DB_USERNAME:-tiquet_user}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-tiquet_password}
+    volumes:
+      - mysql_data:/var/lib/mysql
+    networks:
+      - tiquet_network
+
+  # Base de Datos en Memoria para Socket.io y Cache
+  redis:
+    image: redis:7-alpine
+    container_name: tiquet_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - tiquet_network
+
+  # Framework Backend (API REST y Lógica de Negocio)
+  laravel-app:
+    build:
+      context: ./backend-laravel
+      target: development
+
+    container_name: tiquet_laravel
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend-laravel:/var/www/html
+    depends_on:
+      - mysql
+      - redis
+    env_file:
+      - .env
+    environment:
+      - DB_CONNECTION=mysql
+      - DB_HOST=mysql
+      - REDIS_HOST=redis
+    networks:
+      - tiquet_network
+
+  # Microservicio Node.js (WebSockets de tiempo real - Socket.io)
+  node-app:
+    build:
+      context: ./backend-node
+      target: development
+
+    container_name: tiquet_node
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./backend-node:/app
+      - /app/node_modules
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - PORT=3000
+    networks:
+      - tiquet_network
+
+  # Framework Frontend (Vistas de Usuarios / Admin)
+  nuxt-app:
+    build:
+      context: ./front-nuxt
+      target: development
+
+    container_name: tiquet_nuxt
+    restart: unless-stopped
+    ports:
+      - "3001:3000" # Nuxt por defecto usa 3000. Lo mostramos en 3001
+    volumes:
+      - ./front-nuxt:/app
+      - /app/node_modules
+    # Solo inyectamos las variables que Nuxt realmente necesita.
+    # Nunca le pasamos DB_PASSWORD ni otras credenciales de backend.
+    environment:
+      - NITRO_HOST=0.0.0.0
+      - NITRO_PORT=3000
+      - NUXT_PUBLIC_API_URL=${LARAVEL_API_URL:-http://localhost:8000}
+      - NUXT_PUBLIC_SOCKET_URL=${NODE_SOCKET_URL:-http://localhost:3000}
+    networks:
+      - tiquet_network
+
+networks:
+  tiquet_network:
+    driver: bridge
+
+volumes:
+  mysql_data:
+  redis_data:

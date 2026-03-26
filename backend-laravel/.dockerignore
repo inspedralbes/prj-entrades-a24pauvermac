@@ -1,0 +1,34 @@
+# Dependencias de PHP (se instalan dentro del contenedor)
+vendor/
+
+# Dependencias de Node (Vite, npm scripts)
+node_modules/
+
+# Archivos de entorno (nunca copiar secretos a la imagen)
+.env
+.env.*
+!.env.example
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Caché y compilados de Laravel
+bootstrap/cache/*.php
+storage/logs/*.log
+storage/framework/cache/
+storage/framework/sessions/
+storage/framework/views/
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# Dockerfile y compose (no necesarios dentro de la imagen)
+Dockerfile
+docker-compose*.yml
+
+# Tests y documentación innecesaria en la imagen
+README.md
+phpunit.xml

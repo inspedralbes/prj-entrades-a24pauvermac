@@ -1,0 +1,20 @@
+# Archivos de entorno (nunca subir a Git)
+.env
+.env.prod
+.env.local
+.env.*.local
+
+# Dependencias
+node_modules/
+vendor/
+
+# Compilados y caché
+.nuxt/
+.output/
+dist/
+
+# Logs
+*.log
+
+# Sistema
+.DS_Store
