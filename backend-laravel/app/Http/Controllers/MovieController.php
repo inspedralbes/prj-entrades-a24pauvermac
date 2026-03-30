@@ -106,6 +106,7 @@ class MovieController extends Controller
                 'formato' => $sesion->format,
                 'precio' => $precio->price,
                 'sala_nombre' => $sala->name,
+                'capacidad_total' => $capacidadTotal, // ESTE CAMPO ES NUEVO PARA PINTAR LOS ASIENTOS EN NUXT
                 'asientos_disponibles' => $asientosDisponibles
             );
 

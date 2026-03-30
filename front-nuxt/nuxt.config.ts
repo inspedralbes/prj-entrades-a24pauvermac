@@ -10,5 +10,15 @@ export default defineNuxtConfig({
       // La URL de tu API Laravel (el servicio 'laravel-app')
       apiBase: process.env.NUXT_PUBLIC_API_URL || 'http://localhost:8000',
     }
+  },
+  css: [
+    '@fortawesome/fontawesome-svg-core/styles.css'
+  ],
+  build: {
+    transpile: [
+      '@fortawesome/vue-fontawesome',
+      '@fortawesome/fontawesome-svg-core',
+      '@fortawesome/free-solid-svg-icons'
+    ]
   }
 })
