@@ -1,40 +1,90 @@
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useBookingStore } from '~/stores/useBookingStore'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+
+// 1. Invocamos nuestro plugin secreto .client ("walkie talkie" hacia Node)
+const nuxtApp = useNuxtApp()
+const $socket = nuxtApp.$socket
 
 const route = useRoute()
 const movieId = route.params.id
 
-// Usamos el Gestor Central para pedir a Laravel
 const { data: screenings, pending } = await CommunicationManager.getScreeningsByMovieId(movieId)
 
-// Usamos Pinia
 const gestorDeReservas = useBookingStore()
-
 const sesionSeleccionada = ref(null)
 const entradasSeleccionadas = ref(1)
 
-// ====== NUEVA LOGICA DE FASES ======
-const pasoActual = ref(1) // Iniciaremos siempre en el paso 1 (El Formulario)
+const pasoActual = ref(1) 
 
+// ======================= FASE 3 WEBSOCKETS =======================
+
+// Al entrar visualmente a la sala oscura en la pantalla...
 function irAlPasoDeAsientos() {
-  pasoActual.value = 2; // Oculta el form, enseña el mapa
+  pasoActual.value = 2; 
+
+  // Si tenemos señal del servidor de Node.js, emitimos nuestra intención de "Unirnos" a su cuarto virtual.
+  if ($socket) {
+    $socket.emit('unirse_a_sesion', sesionSeleccionada.value.id);
+  }
 }
 
 function volverAlFormulario() {
-  pasoActual.value = 1; // Vuelve a enseñar el form
-  gestorDeReservas.clearCart(); // Limpiamos asientos elegidos por si decide cambiar la hora de la película
+  pasoActual.value = 1; 
+  gestorDeReservas.clearCart(); 
+  
+  // Un pequeño truco que emite un falso disconnect para liberar bloqueos temporalmente cuando nos cansamos de comprar. 
+  // Node automáticamente liberará nuestros asientos cuando reciba esto.
+  if ($socket) { $socket.emit('liberar_asiento', { screening_id: sesionSeleccionada.value.id, asiento_id: -1 }); }
 }
 
-// ====== LOGICA MAGICA PARA DIBUJAR SUPER SALA ======
+onMounted(() => {
+  // Solo enganchamos las antenas receptoras si el enchufe (Plugin) está encendido
+  if (!$socket) return;
+
+  // Escucha A: "Acabas de entrar y la sala está así:"
+  $socket.on('estado_inicial_asientos', (listaSillasAmarillas) => {
+    gestorDeReservas.setInitialLockedSeats(listaSillasAmarillas);
+  });
+
+  // Escucha B: "Has chocado de manera idéntica contra otro cliente"
+  $socket.on('conflicto_asiento', (asiento_id) => {
+    alert("¡Uy! Ese asiento justo acaba de ser agarrado por otra persona ahora mismo.");
+    // Metemos este asiento a la fuerza en el corral de "Cosas de la Competencia" (amarillo)
+    gestorDeReservas.addLockedSeat(asiento_id);
+  });
+
+  // Escucha C: "Otra persona ha marcado un asiento en su casa"
+  $socket.on('asiento_bloqueado_por_otro', (asiento_id) => {
+    gestorDeReservas.addLockedSeat(asiento_id);
+  });
+
+  // Escucha D: "Alguien se ha liberado"
+  $socket.on('asiento_liberado', (asiento_id) => {
+    gestorDeReservas.releaseLockedSeat(asiento_id);
+  });
+});
+
+// Limitar pérdidas de memoria cerrando las antenas al abandonar la página por completo
+onUnmounted(() => {
+  if ($socket) {
+    $socket.off('estado_inicial_asientos');
+    $socket.off('conflicto_asiento');
+    $socket.off('asiento_bloqueado_por_otro');
+    $socket.off('asiento_liberado');
+  }
+  gestorDeReservas.clearCart()
+})
+// =================================================================
+
 const mapaDeAsientos = computed(() => {
   if (sesionSeleccionada.value == null) return [];
 
   let capacidadMaxima = sesionSeleccionada.value.capacidad_total;
   let mapaFinal = [];
   let numeroAsientoGlobal = 1;
-  let idLetraFila = 65; // Letra 'A'
+  let idLetraFila = 65; 
 
   let asientosPorFila = 16; 
 
@@ -67,19 +117,43 @@ const mapaDeAsientos = computed(() => {
   return mapaFinal.reverse();
 })
 
-// ====== LOGICA SEGURA DE PINIA ======
+// LOGICA COMBINADA PINIA + SOCKET AL HACER CLIC
 function hacerClicEnAsiento(asiento_id) {
-  const yaEstabaVerde = esAsientoSeleccionado(asiento_id);
-
-  // Si intentamos seleccionar uno nuevo, PERO ya hemos rellenado nuestro cupo... lo bloqueamos para evitar excesos
-  if (yaEstabaVerde === false && gestorDeReservas.totalSeats >= entradasSeleccionadas.value) {
-    alert(`Solo has pagado por ${entradasSeleccionadas.value} entradas. Deselecciona algún asiento verde primero si quieres cambiarlo.`);
-    return; // Paramos de ejecutar aqui
+  
+  // 1. Comprobamos si es un sitio inviable (Amarillo de otra persona o Rojo comprado antes)
+  if (esAsientoOcultoOdeOtro(asiento_id)) {
+    return; // Paramos de ejecutar inmediatamente (no se puede pinchar aire)
   }
 
-  gestorDeReservas.toggleSeat(asiento_id)
+  // 2. Control anti-abuso local de entradas
+  const yaEstabaVerde = esAsientoSeleccionado(asiento_id);
+  
+  if (yaEstabaVerde === false && gestorDeReservas.totalSeats >= entradasSeleccionadas.value) {
+    alert(`Solo has pagado por ${entradasSeleccionadas.value} entradas. Deselecciona algún asiento verde primero si quieres cambiarlo.`);
+    return; 
+  }
+
+  // 3. Modificamos Pinia temporal en el cliente
+  const seQuedoVerdeOSeQuedoGris = gestorDeReservas.toggleSeat(asiento_id)
+  
+  // 4. Se lo susurramos inmediatamente a Node por el tunel subterráneo
+  if ($socket) {
+     if (seQuedoVerdeOSeQuedoGris === true) {
+       $socket.emit('bloquear_asiento', { 
+         screening_id: sesionSeleccionada.value.id, 
+         asiento_id: asiento_id 
+       });
+     } else {
+       // El usuario se cansó del asiento y le dio clic de nuevo (ahora gris)
+       $socket.emit('liberar_asiento', { 
+         screening_id: sesionSeleccionada.value.id, 
+         asiento_id: asiento_id 
+       });
+     }
+  }
 }
 
+// Devuelve TRUE solo para que el CSS sepa pintar de Verde
 function esAsientoSeleccionado(asiento_id) {
   if (gestorDeReservas.selectedSeats.indexOf(asiento_id) > -1) {
     return true;
@@ -87,7 +161,14 @@ function esAsientoSeleccionado(asiento_id) {
   return false;
 }
 
-// ====== LOGICA TICKET ======
+// Devuelve TRUE solo si la antena Pinia indica que el asiento es Amarillo de otra persona
+function esAsientoOcultoOdeOtro(asiento_id) {
+  if (gestorDeReservas.lockedByOthers.indexOf(asiento_id) > -1) {
+    return true;
+  }
+  return false;
+}
+
 function calcularMaximoEntradas(sesion) {
   if (sesion == null) return 0;
   
@@ -102,7 +183,6 @@ function calcularMaximoEntradas(sesion) {
 <template>
   <div class="booking-container">
     
-    <!-- CABECERA INTELIGENTE (Cambia su flecha de atrás según el Paso) -->
     <div class="header">
       <button v-if="pasoActual === 2" @click="volverAlFormulario" class="btn-back">← Volver a modificar sesión</button>
       <NuxtLink v-else to="/" class="btn-back">← Volver a la cartelera</NuxtLink>
@@ -111,7 +191,6 @@ function calcularMaximoEntradas(sesion) {
       <p>Estás comprando entradas para la película con ID: <strong>{{ movieId }}</strong></p>
     </div>
 
-    <!-- Mensaje de carga mientras llegan los datos de Laravel -->
     <div v-if="pending" class="status-box">
       Cargando sesiones disponibles...
     </div>
@@ -122,7 +201,7 @@ function calcularMaximoEntradas(sesion) {
       </div>
 
       <div v-else>
-        <!-- ======================= PASO 1: FORMULARIO ========================== -->
+        <!-- ======================= PASO 1 ========================== -->
         <form v-if="pasoActual === 1" @submit.prevent="irAlPasoDeAsientos">
           
           <div class="form-group">
@@ -155,7 +234,6 @@ function calcularMaximoEntradas(sesion) {
             </div>
           </div>
 
-          <!-- Boton que hace avanzar de Fase -->
           <button 
              type="submit" 
              class="btn-submit" 
@@ -165,7 +243,7 @@ function calcularMaximoEntradas(sesion) {
           </button>
         </form>
 
-        <!-- ======================= PASO 2: MAPA DE BUTACAS ========================== -->
+        <!-- ======================= PASO 2 ========================== -->
         <div class="sala-container" v-if="pasoActual === 2">
           
           <div class="sala-header">
@@ -191,7 +269,8 @@ function calcularMaximoEntradas(sesion) {
                     :icon="['fas', 'couch']" 
                     class="icono-asiento"
                     :class="{ 
-                      'seleccionado': esAsientoSeleccionado(asiento.id)
+                      'seleccionado': esAsientoSeleccionado(asiento.id),
+                      'en-espera': esAsientoOcultoOdeOtro(asiento.id)
                     }"
                     @click="hacerClicEnAsiento(asiento.id)"
                   />
@@ -203,14 +282,14 @@ function calcularMaximoEntradas(sesion) {
           
           <div class="pantalla-cine">Pantalla</div>
           
+          <!-- LEYENDA COMPLETADA -->
           <div class="leyenda">
-             <div class="item-leyenda"><FontAwesomeIcon :icon="['fas', 'couch']" class="ley-seleccionado" /> Selected</div>
-             <div class="item-leyenda"><FontAwesomeIcon :icon="['fas', 'couch']" class="ley-disponible" /> Available</div>
-             <div class="item-leyenda"><FontAwesomeIcon :icon="['fas', 'couch']" class="ley-ocupado" /> Taken</div>
+             <div class="item-leyenda"><FontAwesomeIcon :icon="['fas', 'couch']" class="ley-seleccionado" /> Míos</div>
+             <div class="item-leyenda"><FontAwesomeIcon :icon="['fas', 'couch']" class="ley-espera" /> Observando</div>
+             <div class="item-leyenda"><FontAwesomeIcon :icon="['fas', 'couch']" class="ley-ocupado" /> Vendido</div>
+             <div class="item-leyenda"><FontAwesomeIcon :icon="['fas', 'couch']" class="ley-disponible" /> Libres</div>
           </div>
 
-          <!-- NUEVO BOTÓN DE PAGAR -->
-          <!-- Ojo al desabled: SOLO se enciende si eliges matemáticamente los exactos que pediste -->
           <button 
              class="btn-submit btn-finalizar mt-4" 
              :disabled="gestorDeReservas.totalSeats !== entradasSeleccionadas"
@@ -220,14 +299,12 @@ function calcularMaximoEntradas(sesion) {
           </button>
 
         </div>
-        <!-- ============================================================= -->
       </div>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* CSS BASE... */
 .booking-container { max-width: 800px; margin: 0 auto; padding: 40px 20px; font-family: sans-serif; color: #333; }
 .header { margin-bottom: 30px; }
 h1 { font-size: 2rem; color: #111827; margin: 15px 0 5px; }
@@ -247,42 +324,28 @@ h1 { font-size: 2rem; color: #111827; margin: 15px 0 5px; }
 .btn-submit:disabled { background-color: #94a3b8; cursor: not-allowed; opacity: 0.7; }
 
 .mt-4 { margin-top: 40px; }
-.btn-finalizar { background-color: #10b981; } /* El boton final es verde */
+.btn-finalizar { background-color: #10b981; } 
 .btn-finalizar:hover:not(:disabled) { background-color: #059669; }
 
-/* NUEVO CSS MAPA EXCLUSIVO */
 .sala-container {
   padding: 40px 30px;
-  background-color: #1e2028; /* Gris oscuro calido igual a tu captura */
+  background-color: #1e2028; 
   border-radius: 8px;
   margin-bottom: 25px;
   text-align: center;
   color: white;
 }
 
-.sala-header {
-  margin-bottom: 30px;
-}
-.sala-header h2 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.4rem;
-}
-.contador-asientos {
-  font-weight: bold;
-  color: #cbd5e1;
-  font-size: 1.1rem;
-  margin-top: 10px;
-}
-.contador-asientos.contador-listo {
-  color: #4ade80; /* Brilla en verde cuando ya has seleccionado todos los que compraste */
-}
+.sala-header { margin-bottom: 30px; }
+.sala-header h2 { margin: 0; color: #fff; font-size: 1.4rem; }
+.contador-asientos { font-weight: bold; color: #cbd5e1; font-size: 1.1rem; margin-top: 10px; }
+.contador-asientos.contador-listo { color: #4ade80; }
 
 .pantalla-cine {
   margin: 50px auto 0;
   padding: 10px;
   background: linear-gradient(180deg, #4ade8020 0%, transparent 100%);
-  border-top: 4px solid #4ade80; /* Linea verde simulando el brillo de la pantalla */
+  border-top: 4px solid #4ade80; 
   color: #4ade80;
   letter-spacing: 2px;
   font-weight: bold;
@@ -291,80 +354,45 @@ h1 { font-size: 2rem; color: #111827; margin: 15px 0 5px; }
   text-transform: uppercase;
 }
 
-.grid-asientos {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
+.grid-asientos { display: flex; flex-direction: column; gap: 15px; }
+.fila { display: flex; align-items: center; justify-content: center; gap: 15px; }
+.letra-fila { color: #64748b; font-weight: bold; width: 20px; text-align: left; font-size: 0.9rem; }
+.asientos-wrapper { display: flex; gap: 8px; }
+.contenedor-asiento { display: flex; }
+.con-pasillo { margin-right: 40px; }
 
-.fila {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 15px;
-}
-
-.letra-fila {
-  color: #64748b;
-  font-weight: bold;
-  width: 20px;
-  text-align: left;
-  font-size: 0.9rem;
-}
-
-.asientos-wrapper {
-  display: flex;
-  gap: 8px;
-}
-
-/* El asiento con su margen grande derecho genera los "Pasillos" */
-.contenedor-asiento {
-  display: flex;
-}
-.con-pasillo {
-  margin-right: 40px; /* Pasillo ancho visual (2 asientos) */
-}
-
-/* Iconos de FontAwesome que dan la vida al diseño */
 .icono-asiento {
   font-size: 1.6rem;
-  color: #3b4252; /* Color gris de "Disponible" */
+  color: #3b4252; 
   cursor: pointer;
   transition: transform 0.1s, color 0.1s;
 }
 
-.icono-asiento:hover {
-  transform: translateY(-3px);
-  color: #6ee7b7; /* Color verde de pre-seleccion al pasar por encima */
-}
+.icono-asiento:hover { transform: translateY(-3px); color: #6ee7b7; }
+.icono-asiento.seleccionado { color: #4ade80; }
 
-.icono-asiento.seleccionado {
-  color: #4ade80; /* El asiento seleccionado verde */
+/* ======== NUEVOS ESTILOS INTERACTIVOS (FASE WESBSOCKET) ======== */
+.icono-asiento.en-espera { 
+  color: #f59e0b; 
+  pointer-events: none; /* Te corta el clic físico del ratón para sillas amarrillas */
 }
-
-/* El componente rojo no interactuable para fase 2 */
 .icono-asiento.ocupado { 
-  color: #f87171; 
+  color: #ef4444; 
   pointer-events: none; 
 }
 
-/* Leyenda inferior */
 .leyenda {
   display: flex;
   justify-content: center;
-  gap: 40px;
+  gap: 20px;
   margin-top: 40px;
-  color: #64748b;
-  font-size: 1rem;
+  font-size: 0.9rem;
 }
 
-.item-leyenda {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
+.item-leyenda { display: flex; align-items: center; gap: 10px; }
 
 .ley-seleccionado { color: #4ade80; }
 .ley-disponible   { color: #3b4252; }
-.ley-ocupado      { color: #f87171; }
+.ley-espera       { color: #f59e0b; }
+.ley-ocupado      { color: #ef4444; }
 </style>

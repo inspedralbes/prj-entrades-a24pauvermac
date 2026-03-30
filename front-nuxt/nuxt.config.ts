@@ -9,6 +9,8 @@ export default defineNuxtConfig({
     public: {
       // La URL de tu API Laravel (el servicio 'laravel-app')
       apiBase: process.env.NUXT_PUBLIC_API_URL || 'http://localhost:8000',
+      // La URL en la que vive el Microservicio Árbitro interactivo de Node.js (el .env/docker-compose dice 3000)
+      socketUrl: process.env.NUXT_PUBLIC_SOCKET_URL || 'http://localhost:3000'
     }
   },
   css: [
