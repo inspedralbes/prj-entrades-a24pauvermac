@@ -1,8 +1,6 @@
 <script setup>
-const config = useRuntimeConfig();
-// En SSR (servidor Docker) usamos la URL interna; en el navegador la URL pública
-const apiUrl = import.meta.server ? config.apiUrlInternal : config.public.apiBase;
-const { data: movies, pending, error } = await useFetch(`${apiUrl}/api/movies`);
+// Llamada organizada utilizando nuestro Gestor de Comunicación centralizado
+const { data: movies, pending, error } = await CommunicationManager.getPopularMovies();
 
 const imgBase = 'https://image.tmdb.org/t/p/w300';
 </script>
@@ -26,6 +24,14 @@ const imgBase = 'https://image.tmdb.org/t/p/w300';
           <div class="movie-info">
             <h2>{{ movie.title }}</h2>
             <p>{{ movie.overview }}</p>
+            <div class="actions">
+              <NuxtLink :to="`/movie/${movie.id}`" class="btn-details">
+                Ver detalles
+              </NuxtLink>
+              <NuxtLink :to="`/booking/${movie.id}`" class="btn-buy">
+                Comprar entradas
+              </NuxtLink>
+            </div>
           </div>
         </li>
       </ul>
@@ -73,6 +79,35 @@ ul {
 
 .movie-info {
   flex: 1;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 15px;
+}
+
+.btn-details, .btn-buy {
+  display: inline-block;
+  padding: 8px 16px;
+  color: white;
+  text-decoration: none;
+  font-weight: bold;
+  border-radius: 4px;
+}
+
+.btn-details {
+  background-color: #0066cc;
+}
+.btn-details:hover {
+  background-color: #0052a3;
+}
+
+.btn-buy {
+  background-color: #10b981; /* Verde esmeralda */
+}
+.btn-buy:hover {
+  background-color: #059669;
 }
 
 h2 {

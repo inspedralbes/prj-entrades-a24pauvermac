@@ -22,3 +22,6 @@ Route::get('/movies/search', [MovieController::class, 'search']);
 
 // Obtener una película específica (por ID)
 Route::get('/movies/{id}', [MovieController::class, 'show']);
+
+// Obtener las sesiones y asientos de una película
+Route::get('/movies/{id}/screenings', [MovieController::class, 'getScreeningsByMovie']);

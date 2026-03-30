@@ -2,6 +2,7 @@
 export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
+  modules: ['@pinia/nuxt'],
   runtimeConfig: {
     // Solo disponible en el servidor (SSR) — nunca llega al navegador
     apiUrlInternal: process.env.NUXT_API_URL_INTERNAL || 'http://laravel-app:8000',

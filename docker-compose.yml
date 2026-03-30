@@ -101,6 +101,16 @@ services:
     networks:
       - tiquet_network
 
+  # Interfaz gráfica (Web) para ver y administrar la base de datos MySQL
+  adminer:
+    image: adminer
+    container_name: tiquet_adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    networks:
+      - tiquet_network
+
 networks:
   tiquet_network:
     driver: bridge
