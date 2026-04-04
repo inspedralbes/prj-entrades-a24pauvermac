@@ -77,28 +77,14 @@ class MovieController extends Controller
             // 3. Buscamos el precio para mandarlo tambien
             $precio = \App\Models\Pricing::find($sesion->price_id);
 
-            // 4. Buscamos TODAS las reservas que se han hecho para ESTA sesion concreta
-            $reservas = \App\Models\Booking::where('screening_id', $sesion->id)->get();
+            // 4. Usamos el accessor del modelo Screening para obtener los asientos ocupados
+            // La logica de conteo vive en Screening::getOccupiedSeatsAttribute(), no repetimos codigo aqui
+            $asientosOcupados = $sesion->occupied_seats;
 
-            $asientosOcupados = 0;
-
-            // 5. Contamos asiento por asiento (mirando dentro del JSON)
-            foreach ($reservas as $reserva) {
-                // Solo miramos si el estado esta confirmado
-                if ($reserva->status == 'confirmed') {
-                    
-                    // El campo seats_id es un Array de PHP, gracias a la propiedad "$casts" de nuestro Modelo
-                    $arrayDeAsientos = $reserva->seats_id;
-                    $cantidadDeEstaReserva = count($arrayDeAsientos);
-                    
-                    $asientosOcupados = $asientosOcupados + $cantidadDeEstaReserva;
-                }
-            }
-
-            // 6. Resta simple
+            // 5. Resta simple
             $asientosDisponibles = $capacidadTotal - $asientosOcupados;
 
-            // 7. Agrupamos los datos limpios para evitar mandar campos basura a Nuxt
+            // 6. Agrupamos los datos limpios para evitar mandar campos basura a Nuxt
             $datosLimpios = array(
                 'id' => $sesion->id,
                 'hora_inicio' => $sesion->starts_at,
@@ -106,7 +92,7 @@ class MovieController extends Controller
                 'formato' => $sesion->format,
                 'precio' => $precio->price,
                 'sala_nombre' => $sala->name,
-                'capacidad_total' => $capacidadTotal, // ESTE CAMPO ES NUEVO PARA PINTAR LOS ASIENTOS EN NUXT
+                'capacidad_total' => $capacidadTotal,
                 'asientos_disponibles' => $asientosDisponibles
             );
 

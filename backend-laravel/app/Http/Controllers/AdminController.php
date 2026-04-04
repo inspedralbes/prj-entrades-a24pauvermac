@@ -89,11 +89,8 @@ class AdminController extends Controller
         
         $listaFinal = [];
         foreach ($screenings as $sesion) {
-            $reservas = Booking::where('screening_id', $sesion->id)->where('status', 'confirmed')->get();
-            $asientosOcupados = 0;
-            foreach ($reservas as $reserva) {
-                $asientosOcupados += count($reserva->seats_id ?? []);
-            }
+            // Usamos el accessor del modelo para no repetir la logica de conteo de asientos
+            $asientosOcupados = $sesion->occupied_seats;
             
             $capacidadTotal = $sesion->room ? $sesion->room->capacity : 0;
             
@@ -125,12 +122,14 @@ class AdminController extends Controller
         $movie = Movie::firstOrCreate(['tmdb_id' => $request->tmdb_id]);
 
         $screening = Screening::create([
-            'movie_id' => $movie->id,
-            'room_id' => $request->room_id,
-            'price_id' => $request->price_id,
+            'movie_id'  => $movie->id,
+            'room_id'   => $request->room_id,
+            'price_id'  => $request->price_id,
             'starts_at' => $request->starts_at,
-            'language' => $request->language ?? 'esp',
-            'format' => $request->format ?? '2D'
+            // Usamos input() en vez de ->propiedad para evitar colisiones con metodos internos de Request
+            // $request->format es un metodo protegido de Laravel, no un campo del body
+            'language'  => $request->input('language', 'esp'),
+            'format'    => $request->input('format', '2D')
         ]);
 
         return response()->json([

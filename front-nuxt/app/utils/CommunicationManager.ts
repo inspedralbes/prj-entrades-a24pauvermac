@@ -1,6 +1,17 @@
 // CommunicationManager encapsula y centraliza todas las llamadas al backend de Laravel
 // Para hacer peticiones HTTP usamos nuestra propia función 'useApi' (que soluciona el tema Docker vs Navegador)
 
+/**
+ * Helper para llamadas $fetch bajo demanda (clics, formularios, acciones del usuario).
+ * Resuelve la URL base correcta según si estamos en el servidor (Docker) o en el navegador.
+ * Se usa en lugar de 'useApi' cuando el componente ya está montado.
+ */
+function fetchApi(url: string, opciones: Record<string, any> = {}) {
+  const config = useRuntimeConfig();
+  const baseURL = import.meta.client ? config.public.apiBase : config.apiUrlInternal;
+  return $fetch(url, { baseURL, ...opciones });
+}
+
 export const CommunicationManager = {
   
   /**
@@ -31,18 +42,11 @@ export const CommunicationManager = {
   async solicitarIntencionDePagoStripe(cantidadTotal: number) {
     // Cuando hacemos una petición a raíz de un "Click" de un botón (fuera del setup inicial), 
     // Nuxt 3 requiere usar $fetch en lugar de useFetch. useFetch pierde su URL base si no es carga de página.
-    const config = useRuntimeConfig();
-    const baseURL = import.meta.client ? config.public.apiBase : config.apiUrlInternal;
-
     try {
-      const respuestaData = await $fetch('/api/create-payment-intent', {
-        baseURL: baseURL,
+      const respuestaData = await fetchApi('/api/create-payment-intent', {
         method: 'POST',
-        body: {
-          amount: cantidadTotal
-        }
+        body: { amount: cantidadTotal }
       });
-      
       // Envolvemos la respuesta para que el UseBookingStore no se rompa (que espera .data.value)
       return { data: { value: respuestaData }, error: { value: null } };
     } catch (err) {
@@ -58,51 +62,35 @@ export const CommunicationManager = {
    * Petición para buscar películas en TMDB desde nuestro propio buscador
    */
   searchMoviesProxy(query: string) {
-    const config = useRuntimeConfig();
-    const baseURL = import.meta.client ? config.public.apiBase : config.apiUrlInternal;
-    return $fetch(`/api/movies/search?query=${query}`, { baseURL });
+    return fetchApi(`/api/movies/search?query=${query}`);
   },
 
   /**
    * Obtiene las opciones de Salas y Precios pre-creados para el admin
    */
   getAdminCreationOptions() {
-    const config = useRuntimeConfig();
-    const baseURL = import.meta.client ? config.public.apiBase : config.apiUrlInternal;
-    return $fetch('/api/admin/options', { baseURL });
+    return fetchApi('/api/admin/options');
   },
 
   /**
    * Obtiene la lista de sesiones activas con el número de asientos vendidos y total
    */
   getAdminActiveScreenings() {
-    // Usamos $fetch directo para evitar problemas de caché con botones
-    const config = useRuntimeConfig();
-    const baseURL = import.meta.client ? config.public.apiBase : config.apiUrlInternal;
-    return $fetch('/api/admin/screenings', { baseURL });
+    return fetchApi('/api/admin/screenings');
   },
 
   /**
    * Crea una sesión en base de datos mandando la petición pura a Laravel
    */
   createScreening(data: { tmdb_id: string, room_id: number, price_id: number, starts_at: string, language: string, format: string }) {
-    const config = useRuntimeConfig();
-    const baseURL = import.meta.client ? config.public.apiBase : config.apiUrlInternal;
-    
-    return $fetch('/api/admin/screenings', {
-      baseURL: baseURL,
-      method: 'POST',
-      body: data
-    });
+    return fetchApi('/api/admin/screenings', { method: 'POST', body: data });
   },
 
   /**
    * Petición para obtener las estadísticas globales del panel
    */
   getAdminGlobalStats() {
-    const config = useRuntimeConfig();
-    const baseURL = import.meta.client ? config.public.apiBase : config.apiUrlInternal;
-    return $fetch('/api/admin/stats', { baseURL });
+    return fetchApi('/api/admin/stats');
   }
 
 }
