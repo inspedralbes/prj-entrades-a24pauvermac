@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\MovieController;
+use App\Http\Controllers\PaymentController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -25,3 +26,16 @@ Route::get('/movies/{id}', [MovieController::class, 'show']);
 
 // Obtener las sesiones y asientos de una película
 Route::get('/movies/{id}/screenings', [MovieController::class, 'getScreeningsByMovie']);
+
+// Rutas para la pasarela de pago (Stripe)
+Route::post('/create-payment-intent', [PaymentController::class, 'createPaymentIntent']);
+
+// Rutas de Administrador
+use App\Http\Controllers\AdminController;
+
+Route::prefix('admin')->group(function () {
+    Route::get('/stats', [AdminController::class, 'getGlobalStats']);
+    Route::get('/options', [AdminController::class, 'getCreationOptions']);
+    Route::get('/screenings', [AdminController::class, 'getActiveScreenings']);
+    Route::post('/screenings', [AdminController::class, 'storeScreening']);
+});

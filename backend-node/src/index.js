@@ -38,6 +38,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  // A.2 Unirse como Administrador para ver los contadores en vivo
+  socket.on('unirse_admin_sesion', (screening_id) => {
+    const nombreSalaAdmin = `sesion_${screening_id}_admin`;
+    const nombreSala = `sesion_${screening_id}`;
+    socket.join(nombreSalaAdmin);
+    
+    // Le enviamos de golpe el número total de asientos bloqueados actualmente
+    const totalBloqueados = asientosBloqueados[nombreSala] ? asientosBloqueados[nombreSala].length : 0;
+    socket.emit('admin_temporales_update', totalBloqueados);
+  });
+
   // B. Alguien pulsa una silla gris para hacerla verdecita
   socket.on('bloquear_asiento', (datos) => {
     const { screening_id, asiento_id } = datos;
@@ -64,6 +75,9 @@ io.on('connection', (socket) => {
       // Y EL PASO MÁS IMPORTANTE: Avisa al RESTO DE LA SALA (sin avisarte a ti mismo) de que ese asiento ya no es gris
       socket.to(nombreSala).emit('asiento_bloqueado_por_otro', asiento_id);
       console.log(`🔒 Asiento [${asiento_id}] apartado en la ${nombreSala}`);
+      
+      // Avisamos también al administrador del nuevo recuento (solo manda un numero)
+      io.to(`${nombreSala}_admin`).emit('admin_temporales_update', asientosBloqueados[nombreSala].length);
     }
   });
 
@@ -97,6 +111,9 @@ io.on('connection', (socket) => {
 
       // Gritamos al resto de la sala que pueden volver a coger esta silla (vuelve a ser gris)
       socket.to(nombreSala).emit('asiento_liberado', asiento_id);
+      
+      // Avisamos al admin de que hay un temporal menos
+      io.to(`${nombreSala}_admin`).emit('admin_temporales_update', asientosBloqueados[nombreSala].length);
     }
   });
 
@@ -124,6 +141,9 @@ io.on('connection', (socket) => {
           
           // Avisamos a todo el mundo de que a este usuario se le agotó el tiempo y saltan a gris
           socket.to(nombreSala).emit('asiento_liberado', asiento_id);
+          
+          // Avisamos al admin de que hay un temporal menos
+          io.to(`${nombreSala}_admin`).emit('admin_temporales_update', asientosBloqueados[nombreSala].length);
         }
       }
 

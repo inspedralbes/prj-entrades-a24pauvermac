@@ -2,6 +2,7 @@
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useBookingStore } from '~/stores/useBookingStore'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
+import { loadStripe } from '@stripe/stripe-js'
 
 // 1. Invocamos nuestro plugin secreto .client ("walkie talkie" hacia Node)
 const nuxtApp = useNuxtApp()
@@ -178,6 +179,110 @@ function calcularMaximoEntradas(sesion) {
   }
   return limite;
 }
+
+// ======================= FASE 3 STRIPE Y TEMPORIZADOR =======================
+const procesandoPago = ref(false);
+const mostrarPasarelaStripe = ref(false);
+let instanciaStripe = null;
+let elementosStripe = null;
+
+// Variables reactivas sencillas para el temporizador
+const tiempoRestante = ref(300); // 5 minutos = 300 segundos
+let intervaloTemporizador = null;
+
+const minutosFormateados = computed(() => Math.floor(tiempoRestante.value / 60));
+const segundosFormateados = computed(() => {
+  const segs = tiempoRestante.value % 60;
+  return segs < 10 ? '0' + segs : segs;
+});
+
+function iniciarTemporizador() {
+  tiempoRestante.value = 300;
+  intervaloTemporizador = setInterval(() => {
+    if (tiempoRestante.value > 0) {
+      tiempoRestante.value--;
+    } else {
+      // Si el reloj llega a cero, detenemos todo y volvemos al estado inicial
+      detenerTemporizador();
+      alert("⚠️ El tiempo de reserva (5 min) ha expirado. Hemos liberado tus butacas para otros clientes.");
+      mostrarPasarelaStripe.value = false;
+      volverAlFormulario();
+    }
+  }, 1000); // Cada 1000ms (1 segundo)
+}
+
+function detenerTemporizador() {
+  if (intervaloTemporizador) {
+    clearInterval(intervaloTemporizador);
+    intervaloTemporizador = null;
+  }
+}
+
+async function iniciarProcesoDePago() {
+  procesandoPago.value = true;
+  
+  // 1. Llamamos a nuestra nueva función de Pinia, pasando el precio por entrada
+  const backendNosDioPermiso = await gestorDeReservas.prepararPagoConStripe(sesionSeleccionada.value.precio);
+  
+  if (backendNosDioPermiso) {
+     // 2. Si todo fue bien, mostramos el modal visual y abrimos el reloj
+     mostrarPasarelaStripe.value = true;
+     iniciarTemporizador();
+     
+     // 3. Cargamos la librería central de Stripe con tu llave PÚBLICA (Empieza por pk_test_)
+     instanciaStripe = await loadStripe('pk_test_51TH2YZFmdx0FAxJfQUEEKa3vWkVtUFCrUB9SjwCo3uZ4Bg2UNBaNTIaQYKPVpf5iYCPBWytlKCY3pt0kx4MYmGxy00UNN9uxqb'); 
+     
+     // 4. Le decimos a Vue que espere un poco a que el <div id="pasarela-stripe-contenedor"> aparezca en pantalla
+     setTimeout(() => {
+        // Configuramos los elementos pasándole el código secreto del backend
+        elementosStripe = instanciaStripe.elements({ clientSecret: gestorDeReservas.clientSecretStripe });
+        
+        // Creamos la caja visual de la tarjeta y la incrustamos en el HTML
+        const formularioTarjeta = elementosStripe.create('payment');
+        formularioTarjeta.mount('#pasarela-stripe-contenedor');
+     }, 200);
+
+  } else {
+     alert("Error crítico: El backend (Laravel) no nos dio autorización para abrir la pasarela. Revisa la consola o tu clave secreta de Stripe.");
+  }
+  
+  procesandoPago.value = false;
+}
+
+// Esta función se ejecuta cuando el usuario le da al botón final de pagar con su tarjeta
+async function confirmarElPagoFinal() {
+   procesandoPago.value = true;
+   
+   // Le pedimos a Stripe que intente cobrar la tarjeta directamente sin pasar por nuestro servidor
+   const resultadoDeStripe = await instanciaStripe.confirmPayment({
+      elements: elementosStripe,
+      redirect: 'if_required' // Importante para que no recargue la página automáticamente 
+   });
+
+   // Si la tarjeta falla (fondos insuficientes, código CVC incorrecto, caducada...)
+   if (resultadoDeStripe.error) {
+      alert("⚠️ Stripe ha rechazado la operación: " + resultadoDeStripe.error.message);
+      procesandoPago.value = false;
+   } 
+   // Si el pago se efectuó correctamente...
+   else {
+      detenerTemporizador(); // Reloj paralizado, pago completado con exito
+      alert("✅ ¡PAGO DE PRUEBA REALIZADO CON ÉXITO! Las entradas son tuyas.");
+      
+      // Reseteamos el sistema entero volviendo a la pantalla principal
+      mostrarPasarelaStripe.value = false;
+      procesandoPago.value = false;
+      gestorDeReservas.clearCart();
+      pasoActual.value = 1;
+
+      // Un detalle, aquí tu Vue emitiría a tu Websocket o a tu Laravel que "Ya están compradas 100%"
+   }
+}
+
+function cancelarPagoManualmente() {
+  detenerTemporizador();
+  mostrarPasarelaStripe.value = false;
+}
 </script>
 
 <template>
@@ -292,13 +397,39 @@ function calcularMaximoEntradas(sesion) {
 
           <button 
              class="btn-submit btn-finalizar mt-4" 
-             :disabled="gestorDeReservas.totalSeats !== entradasSeleccionadas"
-             @click="alert('¡Boton funcionando! Redirigiendo a pago y limpiando asientos.')"
+             :disabled="gestorDeReservas.totalSeats !== entradasSeleccionadas || procesandoPago"
+             @click="iniciarProcesoDePago"
           >
-            Confirmar y pagar película - {{ (sesionSeleccionada.precio * entradasSeleccionadas).toFixed(2) }}€
+            {{ procesandoPago ? 'Conectando con Stripe de forma segura...' : `Confirmar y pagar película - ${(sesionSeleccionada.precio * entradasSeleccionadas).toFixed(2)}€` }}
           </button>
 
         </div>
+      </div>
+    </div>
+
+    <!-- ======================= MODAL DE PAGO (STRIPE) ========================== -->
+    <div class="modal-stripe-fondo" v-if="mostrarPasarelaStripe">
+      <div class="modal-stripe-contenido">
+        
+        <h2>🔒 Pasarela de Pago (Test Mode)</h2>
+        
+        <div class="temporizador-alerta">
+           Tiempo restante para completar el pago: <strong>{{ minutosFormateados }}:{{ segundosFormateados }}</strong> minutos
+        </div>
+        
+        <p>Apunto de cobrar el precio de las entradas: <strong>{{ (sesionSeleccionada.precio * entradasSeleccionadas).toFixed(2) }}€</strong></p>
+        
+        <!-- Este DIV es el agujero negro donde Stripe inyectará el formulario Iframe hiper-seguro -->
+        <div id="pasarela-stripe-contenedor" class="contenedor-caja-fuerte"></div>
+        
+        <div class="modal-botones">
+          <button class="btn-cancelar" @click="cancelarPagoManualmente" :disabled="procesandoPago">Cancelar y volver a las sillas</button>
+          
+          <button class="btn-submit btn-finalizar" @click="confirmarElPagoFinal" :disabled="procesandoPago">
+            {{ procesandoPago ? 'Procesando banco...' : 'Ejecutar cobro en tarjeta' }}
+          </button>
+        </div>
+
       </div>
     </div>
   </div>
@@ -395,4 +526,15 @@ h1 { font-size: 2rem; color: #111827; margin: 15px 0 5px; }
 .ley-disponible   { color: #3b4252; }
 .ley-espera       { color: #f59e0b; }
 .ley-ocupado      { color: #ef4444; }
+
+/* ======== ESTILOS MODAL STRIPE ======== */
+.modal-stripe-fondo { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+.modal-stripe-contenido { background: white; padding: 35px; border-radius: 12px; width: 450px; color: #111827; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); text-align: left;}
+.modal-stripe-contenido h2 { color: #10b981; margin-top: 0; margin-bottom: 10px; }
+.contenedor-caja-fuerte { min-height: 220px; padding: 15px 0; }
+.temporizador-alerta { background-color: #fee2e2; color: #b91c1c; padding: 12px; margin: 15px 0; border-radius: 6px; text-align: center; font-size: 1.1rem; border: 1px solid #f87171; }
+.modal-botones { display: flex; gap: 15px; margin-top: 25px; }
+.btn-cancelar { padding: 15px; width: 100%; background: #f1f5f9; color: #475569; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; transition: 0.2s;}
+.btn-cancelar:hover:not(:disabled) { background: #e2e8f0; }
+.btn-cancelar:disabled { opacity: 0.5; cursor: not-allowed; }
 </style>

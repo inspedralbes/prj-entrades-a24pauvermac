@@ -8,6 +8,9 @@ export const useBookingStore = defineStore('booking', () => {
   // Estado 2: Los asientos secuestrados por OTRAS personas en la sala (Amarillos)
   const lockedByOthers = ref<number[]>([])
   
+  // Estado 3: El Secreto del Cliente proporcionado por Stripe (necesario para la pasarela confirmada en el frontend)
+  const clientSecretStripe = ref<string>('')
+  
   // Getter
   const totalSeats = computed(() => selectedSeats.value.length)
   
@@ -54,16 +57,60 @@ export const useBookingStore = defineStore('booking', () => {
   function clearCart() {
     selectedSeats.value = []
     lockedByOthers.value = [] // Por seguridad y limpieza de caché cuando se retrocede
+    clientSecretStripe.value = '' // Limpiar el secreto de Stripe por seguridad
+  }
+
+  // --- NUEVAS FUNCIONES PARA STRIPE ---
+  
+  /**
+   * Esta función calcula el precio final de las butacas, llama explícitamente
+   * al backend de Laravel a través de CommunicationManager y guarda el secreto de Stripe
+   */
+  async function prepararPagoConStripe(precioPorEntrada: number) {
+    const cantidadTotal = totalSeats.value * precioPorEntrada;
+    
+    if (cantidadTotal <= 0) {
+      console.error("Stripe Error: No se puede pagar una cantidad de 0 o menor.");
+      return false;
+    }
+
+    try {
+      // Llamamos explícitamente a nuestra función del CommunicationManager (que usa useFetch por debajo)
+      const { data, error } = await CommunicationManager.solicitarIntencionDePagoStripe(cantidadTotal);
+      
+      if (error.value) {
+         console.error("Error devuelto por el servidor HTTP al crear la intención de pago:", error.value);
+         return false; // Fracaso
+      }
+
+      // Extraemos la respuesta real del envoltorio reactivo data.value
+      const datos: any = data.value;
+
+      // La respuesta viene con un campo 'clientSecret' que necesitamos guardar en este store
+      if (datos && datos.clientSecret) {
+         clientSecretStripe.value = datos.clientSecret;
+         console.log("El Secreto de Stripe se obtuvo correctamente del Backend.");
+         return true; // Éxito
+      } else {
+         console.error("El backend no devolvió un client secret válido.", datos);
+         return false; // Fracaso
+      }
+    } catch (err) {
+      console.error("Error de código al preparar la conexión con nuestro Laravel/Stripe:", err);
+      return false; // Fracaso
+    }
   }
 
   return { 
     selectedSeats, 
-    lockedByOthers, 
+    lockedByOthers,
+    clientSecretStripe, // Exponemos para que el Frontend lo use en Phase 3
     totalSeats, 
     toggleSeat, 
     clearCart,
     setInitialLockedSeats,
     addLockedSeat,
-    releaseLockedSeat
+    releaseLockedSeat,
+    prepararPagoConStripe // Exponemos para que el botón "Comprar" lo inicie
   }
 })
