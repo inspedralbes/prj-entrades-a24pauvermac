@@ -1,137 +1,3 @@
-<template>
-  <div class="admin-container">
-    <header class="admin-header">
-      <h1>Panel de Administración</h1>
-      <NuxtLink to="/">Volver a Inicio</NuxtLink>
-    </header>
-
-    <!-- ESTADÍSTICAS GLOBALES -->
-    <section class="stats-section">
-      <div class="stat-card">
-        <h3>💰 Recaudación Total</h3>
-        <p class="stat-value">{{ adminStore.globalStats.total_revenue }} €</p>
-      </div>
-      <div class="stat-card">
-        <h3>🎟️ Entradas Vendidas</h3>
-        <p class="stat-value">{{ adminStore.globalStats.total_seats_sold }}</p>
-      </div>
-      <div class="stat-card">
-        <h3>📈 Ocupación Global</h3>
-        <p class="stat-value">{{ adminStore.globalStats.occupancy_percentage }} %</p>
-      </div>
-      <div class="stat-card">
-        <h3>📊 Ventas por Tipo</h3>
-        <ul>
-          <li v-for="(amount, type) in adminStore.globalStats.sales_by_type" :key="type">
-            {{ type }}: {{ amount }} €
-          </li>
-        </ul>
-      </div>
-    </section>
-
-    <div class="main-content">
-      <!-- MÓDULO 1: PANEL EN TIEMPO REAL -->
-      <section class="realtime-section">
-        <h2>Panel en Tiempo Real (Sockets)</h2>
-        <div class="form-group">
-          <label>Seleccionar Sesión Activa:</label>
-          <select v-model="selectedScreeningId" @change="onScreeningSelected">
-            <option :value="null">-- Selecciona una sesión --</option>
-            <option v-for="sesion in adminStore.activeScreenings" :key="sesion.id" :value="sesion.id">
-              Sesión #{{ sesion.id }} - {{ sesion.room_name }} - {{ formatDate(sesion.starts_at) }}
-            </option>
-          </select>
-        </div>
-
-        <div v-if="adminStore.realTimePanel.selectedScreeningId" class="realtime-dashboard">
-          <div class="live-stat free">
-            <h4>Libres</h4>
-            <p>{{ freeSeats }}</p>
-          </div>
-          <div class="live-stat temporal">
-            <h4>En Proceso (Naranja)</h4>
-            <p>{{ adminStore.realTimePanel.temporarilyLockedSeats }}</p>
-          </div>
-          <div class="live-stat sold">
-            <h4>Vendidos (Rojo)</h4>
-            <p>{{ adminStore.realTimePanel.seatsSold }}</p>
-          </div>
-          <div class="live-stat total">
-            <h4>Capacidad Total</h4>
-            <p>{{ adminStore.realTimePanel.totalCapacity }}</p>
-          </div>
-        </div>
-        <div v-else class="empty-state">
-           Selecciona una sesión para ver sus datos en vivo.
-        </div>
-      </section>
-
-      <!-- MÓDULO 2: CREACIÓN DE EVENTOS -->
-      <section class="create-section">
-        <h2>Crear Nueva Sesión</h2>
-        
-        <div class="search-box">
-          <label>Buscar Película (TMDB):</label>
-          <div style="display: flex; gap: 10px;">
-            <input type="text" v-model="movieQuery" placeholder="Ej. Interstellar" @keyup.enter="searchMovie" />
-            <button @click="searchMovie">Buscar</button>
-          </div>
-        </div>
-
-        <div v-if="adminStore.movieSearchResults.length > 0" class="movie-results">
-          <div class="movie-card" 
-               v-for="movie in adminStore.movieSearchResults" :key="movie.id"
-               :class="{ selected: selectedMovieId === movie.id }"
-               @click="selectedMovieId = movie.id">
-            <img :src="movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : 'https://via.placeholder.com/200x300'" alt="poster">
-            <p>{{ movie.title }}</p>
-          </div>
-        </div>
-
-        <form v-if="selectedMovieId" @submit.prevent="submitScreening" class="create-form">
-          <p><strong>Película seleccionada:</strong> TMDB ID {{ selectedMovieId }}</p>
-          
-          <div class="form-group">
-            <label>Sala:</label>
-            <select v-model="form.room_id" required>
-              <option v-for="room in adminStore.creationOptions.rooms" :key="room.id" :value="room.id">
-                {{ room.name }} (Cap: {{ room.capacity }})
-              </option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label>Formato y Precio:</label>
-            <select v-model="form.price_id" required @change="onPriceSelected">
-              <option v-for="price in adminStore.creationOptions.pricings" :key="price.id" :value="price.id">
-                {{ price.format }} - {{ price.type }} ({{ price.price }} €)
-              </option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label>Fecha y Hora:</label>
-            <input type="datetime-local" v-model="form.starts_at" required />
-          </div>
-
-          <div class="form-group">
-            <label>Idioma:</label>
-            <select v-model="form.language" required>
-              <option value="esp">Español</option>
-              <option value="eng">Inglés (VOS)</option>
-              <option value="cat">Catalán</option>
-            </select>
-          </div>
-
-          <button type="submit" class="submit-btn" :disabled="isSubmitting">
-            {{ isSubmitting ? 'Creando...' : 'Crear Sesión' }}
-          </button>
-        </form>
-      </section>
-    </div>
-  </div>
-</template>
-
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useAdminStore } from '@/stores/useAdminStore'
@@ -140,14 +6,14 @@ import { io } from 'socket.io-client'
 const adminStore = useAdminStore()
 const config = useRuntimeConfig()
 
-// Para sockets
 let socket: any = null
 const selectedScreeningId = ref<number | null>(null)
 
-// Para el formulario
 const movieQuery = ref('')
 const selectedMovieId = ref<number | null>(null)
+const selectedMovie = ref<any>(null)
 const isSubmitting = ref(false)
+const submitSuccess = ref(false)
 
 const form = ref({
   room_id: '',
@@ -157,52 +23,69 @@ const form = ref({
   format: '2D'
 })
 
-// Computada para saber asientos libres
+// Asientos libres en tiempo real
 const freeSeats = computed(() => {
-  const tot = adminStore.realTimePanel.totalCapacity
+  const tot  = adminStore.realTimePanel.totalCapacity
   const sold = adminStore.realTimePanel.seatsSold
   const temp = adminStore.realTimePanel.temporarilyLockedSeats
   return tot - sold - temp
 })
 
+const fillRate = computed(() => {
+  const tot  = adminStore.realTimePanel.totalCapacity
+  const sold = adminStore.realTimePanel.seatsSold
+  if (!tot) return 0
+  return Math.round((sold / tot) * 100)
+})
+
+// Sesión seleccionada en el panel en tiempo real
+const sesionActiva = computed(() =>
+  adminStore.activeScreenings?.find((s: any) => s.id === selectedScreeningId.value)
+)
+
+// Precio seleccionado (para mostrar en el resumen del formulario)
+const precioSeleccionado = computed(() => {
+  const pricings = (adminStore.creationOptions as any)?.pricings || []
+  return pricings.find((p: any) => p.id == form.value.price_id)
+})
+
 onMounted(async () => {
   await adminStore.fetchAdminDashboardData()
-  
-  // Conectar WebSockets solo al montar, usando la base correcta
-  const socketUrl = import.meta.client ? config.public.socketUrl : 'http://localhost:3000';
+
+  const socketUrl = import.meta.client ? config.public.socketUrl : 'http://localhost:3000'
   socket = io(socketUrl)
 
-  // Escuchar las actualizaciones enviadas específicamente para el admin
   socket.on('admin_temporales_update', (totalTemp: number) => {
     adminStore.updateTemporarilyLocked(totalTemp)
   })
 })
 
 onUnmounted(() => {
-  if (socket) {
-    socket.disconnect()
-  }
+  if (socket) socket.disconnect()
 })
 
 function searchMovie() {
-  if (movieQuery.value.trim() !== '') {
+  if (movieQuery.value.trim()) {
     adminStore.searchMovies(movieQuery.value)
   }
 }
 
+function selectMovie(movie: any) {
+  selectedMovieId.value = movie.id
+  selectedMovie.value = movie
+}
+
 function onPriceSelected(event: any) {
-  const priceId = event.target.value;
-  const pricings = (adminStore.creationOptions as any)?.pricings || [];
-  const selectedPriceObj = pricings.find((p: any) => p.id == priceId);
-  if (selectedPriceObj) {
-    form.value.format = selectedPriceObj.format;
-  }
+  const priceId = event.target.value
+  const pricings = (adminStore.creationOptions as any)?.pricings || []
+  const found = pricings.find((p: any) => p.id == priceId)
+  if (found) form.value.format = found.format
 }
 
 async function submitScreening() {
-  if (!selectedMovieId.value || !form.value.room_id || !form.value.price_id || !form.value.starts_at) return;
-  
-  isSubmitting.value = true;
+  if (!selectedMovieId.value || !form.value.room_id || !form.value.price_id || !form.value.starts_at) return
+
+  isSubmitting.value = true
   const payload = {
     tmdb_id: selectedMovieId.value.toString(),
     room_id: Number(form.value.room_id),
@@ -210,205 +93,636 @@ async function submitScreening() {
     starts_at: form.value.starts_at,
     language: form.value.language,
     format: form.value.format
-  };
+  }
 
-  const success = await adminStore.createScreening(payload);
-  isSubmitting.value = false;
-  
+  const success = await adminStore.createScreening(payload)
+  isSubmitting.value = false
+
   if (success) {
-    alert("Sesión creada correctamente!");
-    selectedMovieId.value = null; // reset visual
+    submitSuccess.value = true
+    selectedMovieId.value = null
+    selectedMovie.value = null
+    movieQuery.value = ''
+    form.value = { room_id: '', price_id: '', starts_at: '', language: 'esp', format: '2D' }
+    setTimeout(() => { submitSuccess.value = false }, 3000)
   } else {
-    alert("Hubo un error al crear la sesión");
+    alert('Hubo un error al crear la sesión.')
   }
 }
 
 function onScreeningSelected() {
   if (selectedScreeningId.value) {
-    // Si ya estabamos en una sala admin, quizas habria que hacer socket.emit('salir_admin_sesion'), 
-    // pero para mantenerlo simple conectamos a la nueva
     adminStore.selectScreeningForRealTime(selectedScreeningId.value)
-    
-    // Avisamos a Node que como administradores queremos ver el contador de ESTA sesión
     socket.emit('unirse_admin_sesion', selectedScreeningId.value)
   }
 }
 
 function formatDate(dateStr: string) {
-  const d = new Date(dateStr)
-  return d.toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+  return new Date(dateStr).toLocaleString('es-ES', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 </script>
 
+<template>
+  <div class="adm-page">
+
+    <!-- ══ HEADER ══ -->
+    <header class="adm-header">
+      <span class="adm-logo text-label">UT·Cinema Admin</span>
+      <nav class="adm-nav">
+        <a href="#" class="adm-nav-link text-label adm-nav-active">Dashboard</a>
+        <a href="#" class="adm-nav-link text-label">Sesiones</a>
+        <a href="#" class="adm-nav-link text-label">Analítica</a>
+        <NuxtLink to="/" class="adm-nav-link text-label">← Cartelera</NuxtLink>
+      </nav>
+    </header>
+
+    <div class="adm-body container">
+
+      <!-- ══ STATS ROW ══ -->
+      <div class="adm-stats-row">
+        <div class="adm-stat-card">
+          <p class="adm-stat-label text-label">Recaudación Total</p>
+          <p class="adm-stat-value">
+            €{{ Number(adminStore.globalStats?.total_revenue || 0).toLocaleString('es-ES', { minimumFractionDigits: 2 }) }}
+          </p>
+          <p class="adm-stat-sub text-label">Ingresos acumulados</p>
+        </div>
+        <div class="adm-stat-card">
+          <p class="adm-stat-label text-label">Entradas Vendidas</p>
+          <p class="adm-stat-value">{{ adminStore.globalStats?.total_seats_sold ?? '—' }}</p>
+          <p class="adm-stat-sub text-label">Total de reservas</p>
+        </div>
+        <div class="adm-stat-card">
+          <p class="adm-stat-label text-label">Ocupación Global</p>
+          <p class="adm-stat-value">{{ adminStore.globalStats?.occupancy_percentage ?? '—' }}%</p>
+          <p class="adm-stat-sub text-label">Media de todas las salas</p>
+        </div>
+        <div class="adm-stat-card">
+          <p class="adm-stat-label text-label">Sesiones Activas</p>
+          <p class="adm-stat-value">{{ adminStore.activeScreenings?.length ?? '—' }}</p>
+          <p class="adm-stat-sub text-label">En programación hoy</p>
+        </div>
+      </div>
+
+      <!-- ══ MAIN GRID ══ -->
+      <div class="adm-main-grid">
+
+        <!-- COLUMNA IZQUIERDA: Panel Tiempo Real -->
+        <section class="adm-section">
+          <h2 class="adm-section-title">Panel en Tiempo Real</h2>
+          <p class="adm-section-sub text-body">
+            Monitoreo directo de la afluencia y rendimiento de la sesión actual.
+          </p>
+
+          <!-- Selector de sesión -->
+          <div class="adm-field-group">
+            <label class="adm-field-label text-label">Seleccionar Sesión Activa</label>
+            <div class="adm-select-wrapper">
+              <select class="adm-select" v-model="selectedScreeningId" @change="onScreeningSelected">
+                <option :value="null">— Selecciona una sesión —</option>
+                <option v-for="s in adminStore.activeScreenings" :key="s.id" :value="s.id">
+                  {{ s.room_name }} — {{ s.movie_title || 'Sesión #' + s.id }} ({{ formatDate(s.starts_at) }})
+                </option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Panel en vivo -->
+          <div v-if="sesionActiva" class="adm-live-card">
+            <div class="adm-live-header">
+              <p class="adm-live-label text-label">Progreso de la Sesión</p>
+              <div class="adm-live-title-row">
+                <span class="adm-live-title">{{ sesionActiva.movie_title || sesionActiva.room_name }}</span>
+                <span class="adm-live-badge text-label">En Curso</span>
+              </div>
+            </div>
+
+            <div class="adm-live-numbers">
+              <div>
+                <p class="adm-live-num-label text-label">Asientos<br>Ocupados</p>
+                <p class="adm-live-num">
+                  {{ adminStore.realTimePanel.seatsSold }} /
+                  <span class="adm-live-num-total">{{ adminStore.realTimePanel.totalCapacity }}</span>
+                </p>
+              </div>
+              <div class="adm-live-revenue">
+                <p class="adm-live-num-label text-label">Venta Bruta</p>
+                <p class="adm-live-num">€{{ ((sesionActiva.price || 0) * adminStore.realTimePanel.seatsSold).toFixed(2) }}</p>
+              </div>
+            </div>
+
+            <!-- Barra de llenado -->
+            <div class="adm-live-bar-wrap">
+              <div class="adm-live-bar-label text-label">
+                Tasa de Llenado
+                <span>{{ fillRate }}%</span>
+              </div>
+              <div class="adm-progress-track">
+                <div class="adm-progress-fill" :style="{ width: fillRate + '%' }"></div>
+              </div>
+            </div>
+
+            <!-- Indicadores adicionales -->
+            <div class="adm-live-indicators">
+              <div class="adm-indicator">
+                <span class="adm-indicator-dot adm-dot-orange"></span>
+                <span class="text-label">En Proceso</span>
+                <strong>{{ adminStore.realTimePanel.temporarilyLockedSeats }}</strong>
+              </div>
+              <div class="adm-indicator">
+                <span class="adm-indicator-dot adm-dot-grey"></span>
+                <span class="text-label">Libres</span>
+                <strong>{{ freeSeats }}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="adm-empty-state">
+            <p class="text-label">Selecciona una sesión para ver sus datos en tiempo real.</p>
+          </div>
+        </section>
+
+        <!-- COLUMNA DERECHA: Crear Sesión -->
+        <section class="adm-section">
+          <h2 class="adm-section-title">Crear Nueva Sesión</h2>
+          <p class="adm-section-sub text-body">
+            Gestión de la cartelera y asignación de horarios para proyecciones futuras.
+          </p>
+
+          <!-- Buscador TMDB -->
+          <div class="adm-search-box">
+            <span class="adm-search-icon">⌕</span>
+            <input
+              class="adm-search-input"
+              type="text"
+              v-model="movieQuery"
+              placeholder="Buscar película en TMDB..."
+              @keyup.enter="searchMovie"
+            />
+          </div>
+
+          <!-- Resultados de búsqueda -->
+          <div v-if="adminStore.movieSearchResults?.length > 0" class="adm-movie-grid">
+            <div
+              v-for="movie in adminStore.movieSearchResults.slice(0, 5)"
+              :key="movie.id"
+              class="adm-movie-thumb"
+              :class="{ 'adm-movie-thumb-active': selectedMovieId === movie.id }"
+              @click="selectMovie(movie)"
+            >
+              <img
+                :src="movie.poster_path ? `https://image.tmdb.org/t/p/w200${movie.poster_path}` : ''"
+                :alt="movie.title"
+                class="adm-movie-img"
+              />
+              <p class="adm-movie-label text-label">{{ movie.title }}</p>
+            </div>
+          </div>
+
+          <!-- Formulario de creación -->
+          <form v-if="selectedMovieId" @submit.prevent="submitScreening" class="adm-create-form">
+
+            <!-- Sala + Formato en la misma fila -->
+            <div class="adm-form-row">
+              <div class="adm-field-group">
+                <label class="adm-field-label text-label">Sala de Proyección</label>
+                <div class="adm-select-wrapper">
+                  <select class="adm-select" v-model="form.room_id" required>
+                    <option value="">Elegir sala...</option>
+                    <option v-for="room in adminStore.creationOptions?.rooms" :key="room.id" :value="room.id">
+                      {{ room.name }} ({{ room.capacity }} butacas)
+                    </option>
+                  </select>
+                </div>
+              </div>
+              <div class="adm-field-group">
+                <label class="adm-field-label text-label">Formato y Precio</label>
+                <div class="adm-select-wrapper">
+                  <select class="adm-select" v-model="form.price_id" required @change="onPriceSelected">
+                    <option value="">Elegir formato...</option>
+                    <option v-for="price in adminStore.creationOptions?.pricings" :key="price.id" :value="price.id">
+                      {{ price.format }} — €{{ price.price }}
+                    </option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <!-- Fecha + Idioma -->
+            <div class="adm-form-row">
+              <div class="adm-field-group">
+                <label class="adm-field-label text-label">Fecha y Hora</label>
+                <input class="adm-input" type="datetime-local" v-model="form.starts_at" required />
+              </div>
+              <div class="adm-field-group">
+                <label class="adm-field-label text-label">Idioma y Subtítulos</label>
+                <div class="adm-select-wrapper">
+                  <select class="adm-select" v-model="form.language" required>
+                    <option value="esp">Español (Doblada)</option>
+                    <option value="eng">VOSE (Inglés / Subs. Español)</option>
+                    <option value="cat">Català (Doblada)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <button type="submit" class="adm-submit-btn text-label" :disabled="isSubmitting">
+              {{ isSubmitting ? 'Creando...' : 'Confirmar Sesión →' }}
+            </button>
+
+            <p v-if="submitSuccess" class="adm-success-msg text-label">✓ Sesión creada correctamente.</p>
+          </form>
+
+        </section>
+      </div>
+    </div>
+
+    <!-- ══ FOOTER ══ -->
+    <footer class="adm-footer">
+      <span class="text-label adm-footer-brand">© {{ new Date().getFullYear() }} UT·Cinema. Archival Precision.</span>
+      <div class="adm-footer-links">
+        <a href="#" class="text-label">Privacidad</a>
+        <a href="#" class="text-label">Términos</a>
+        <NuxtLink to="/" class="text-label">Inicio</NuxtLink>
+      </div>
+    </footer>
+
+  </div>
+</template>
+
 <style scoped>
-.admin-container {
-  padding: 2rem;
-  font-family: Arial, sans-serif;
-  color: white;
-  background-color: #121212;
+/* ── PAGE ─────────────────────────────────────────────────────── */
+.adm-page {
   min-height: 100vh;
+  background: var(--color-surface);
+  color: var(--color-on-surface);
+  display: flex;
+  flex-direction: column;
 }
 
-.admin-header {
+/* ── HEADER ───────────────────────────────────────────────────── */
+.adm-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 var(--spacing-md);
+  height: 56px;
+  background: var(--color-surface-container-lowest);
+  border-bottom: 1px solid rgba(26,26,26,0.08);
+}
+
+.adm-logo {
+  font-family: var(--font-serif);
+  font-size: 0.85rem;
+  font-weight: 400;
+  letter-spacing: 0.05em;
+  color: var(--color-primary);
+  font-style: normal;
+  text-transform: none;
+}
+
+.adm-nav { display: flex; gap: var(--spacing-lg); }
+.adm-nav-link {
+  text-decoration: none;
+  color: var(--color-on-surface-muted);
+  font-size: 0.7rem;
+  transition: color 0.2s;
+  padding-bottom: 2px;
+}
+.adm-nav-link:hover { color: var(--color-primary); }
+.adm-nav-active {
+  color: var(--color-primary);
+  border-bottom: 1px solid var(--color-primary);
+}
+
+/* ── BODY ─────────────────────────────────────────────────────── */
+.adm-body {
+  flex: 1;
+  padding-top: var(--spacing-lg);
+  padding-bottom: var(--spacing-xl);
+}
+
+/* ── STATS ROW ────────────────────────────────────────────────── */
+.adm-stats-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-xl);
+}
+
+.adm-stat-card {
+  background: var(--color-surface-container-lowest);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-ambient);
+}
+
+.adm-stat-label {
+  color: var(--color-on-surface-muted);
+  font-size: 0.65rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+.adm-stat-value {
+  font-family: var(--font-serif);
+  font-size: 2.2rem;
+  font-weight: 200;
+  color: var(--color-primary);
+  line-height: 1;
+  margin-bottom: 8px;
+}
+
+.adm-stat-sub {
+  color: var(--color-on-surface-muted);
+  font-size: 0.6rem;
+}
+
+/* ── MAIN GRID ────────────────────────────────────────────────── */
+.adm-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: var(--spacing-xl);
+  align-items: start;
+}
+
+/* ── SECCIÓN GENÉRICA ─────────────────────────────────────────── */
+.adm-section { }
+
+.adm-section-title {
+  font-family: var(--font-serif);
+  font-size: 2rem;
+  font-weight: 200;
+  font-style: italic;
+  color: var(--color-primary);
+  margin-bottom: 8px;
+  line-height: 1.2;
+}
+
+.adm-section-sub {
+  color: var(--color-on-surface-muted);
+  margin-bottom: var(--spacing-lg);
+  font-size: 0.9rem;
+}
+
+/* ── FIELDS ───────────────────────────────────────────────────── */
+.adm-field-group { flex: 1; }
+.adm-field-label {
+  display: block;
+  color: var(--color-on-surface-muted);
+  font-size: 0.65rem;
+  margin-bottom: 8px;
+}
+
+.adm-select-wrapper { position: relative; }
+.adm-select {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--color-surface-container-lowest);
+  border: 1px solid rgba(26,26,26,0.12);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 300;
+  color: var(--color-primary);
+  cursor: pointer;
+  appearance: none;
+  -webkit-appearance: none;
+}
+.adm-select:focus { outline: none; border-color: var(--color-primary); }
+
+.adm-input {
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--color-surface-container-lowest);
+  border: 1px solid rgba(26,26,26,0.12);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 300;
+  color: var(--color-primary);
+}
+.adm-input:focus { outline: none; border-color: var(--color-primary); }
+
+/* ── LIVE CARD ────────────────────────────────────────────────── */
+.adm-live-card {
+  background: var(--color-surface-container-lowest);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-md);
+  box-shadow: var(--shadow-ambient);
+  margin-top: var(--spacing-md);
+}
+
+.adm-live-header { margin-bottom: var(--spacing-md); }
+.adm-live-label { color: var(--color-on-surface-muted); font-size: 0.65rem; margin-bottom: 8px; }
+
+.adm-live-title-row { display: flex; align-items: center; justify-content: space-between; }
+.adm-live-title {
+  font-family: var(--font-serif);
+  font-size: 1.4rem;
+  font-weight: 300;
+  color: var(--color-primary);
+}
+.adm-live-badge {
+  background: var(--color-primary);
+  color: white;
+  padding: 3px 10px;
+  border-radius: var(--radius-full);
+  font-size: 0.6rem;
+}
+
+.adm-live-numbers {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #333;
-  padding-bottom: 1rem;
-  margin-bottom: 2rem;
-}
-.admin-header a {
-  color: #4CAF50;
-  text-decoration: none;
+  align-items: flex-end;
+  margin-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid rgba(26,26,26,0.07);
 }
 
-/* STATS GLOBALES */
-.stats-section {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 3rem;
-}
-.stat-card {
-  flex: 1;
-  background: #1e1e1e;
-  padding: 1.5rem;
-  border-radius: 8px;
-  border-left: 4px solid #4CAF50;
-}
-.stat-card h3 {
-  margin: 0 0 1rem 0;
-  font-size: 1rem;
-  color: #aaa;
-}
-.stat-value {
-  font-size: 2rem;
-  margin: 0;
-  font-weight: bold;
-}
-.stat-card ul {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.stat-card li {
-  font-size: 1.2rem;
-  font-weight: bold;
-}
-
-.main-content {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 2rem;
-}
-
-/* SECCIONES GENÉRICAS */
-h2 {
-  border-bottom: 1px solid #333;
-  padding-bottom: 0.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.form-group {
-  margin-bottom: 1.5rem;
-}
-.form-group label {
-  display: block;
-  margin-bottom: 0.5rem;
-  color: #ccc;
-}
-input, select {
-  width: 100%;
-  padding: 0.8rem;
-  border-radius: 4px;
-  border: 1px solid #444;
-  background: #2a2a2a;
-  color: white;
-}
-button {
-  background: #4CAF50;
-  color: white;
-  border: none;
-  padding: 0.8rem 1.5rem;
-  border-radius: 4px;
-  cursor: pointer;
-}
-button:hover {
-  background: #45a049;
-}
-
-/* REALTIME DASHBOARD */
-.empty-state {
-  padding: 3rem;
-  text-align: center;
-  background: #1e1e1e;
-  border-radius: 8px;
-  color: #666;
-}
-.realtime-dashboard {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-}
-.live-stat {
-  padding: 1.5rem;
-  border-radius: 8px;
-  text-align: center;
-}
-.live-stat h4 {
-  margin: 0 0 0.5rem 0;
-  font-size: 0.9rem;
-  text-transform: uppercase;
-}
-.live-stat p {
-  margin: 0;
+.adm-live-num-label { color: var(--color-on-surface-muted); font-size: 0.6rem; margin-bottom: 6px; }
+.adm-live-num {
+  font-family: var(--font-serif);
   font-size: 2.5rem;
-  font-weight: bold;
+  font-weight: 200;
+  color: var(--color-primary);
+  line-height: 1;
 }
-.free { background: #1b3a20; color: #81c784; }
-.temporal { background: #4a3300; color: #ffb74d; }
-.sold { background: #3c1212; color: #e57373; }
-.total { background: #263238; color: #90a4ae; }
+.adm-live-num-total { font-size: 1.2rem; opacity: 0.4; }
+.adm-live-revenue { text-align: right; }
 
-/* CREATE SECTION */
-.movie-results {
+.adm-live-bar-wrap { margin-bottom: var(--spacing-md); }
+.adm-live-bar-label {
   display: flex;
-  overflow-x: auto;
-  gap: 1rem;
-  padding: 1rem 0;
-  margin-bottom: 1.5rem;
+  justify-content: space-between;
+  font-family: var(--font-sans);
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-on-surface-muted);
+  margin-bottom: 6px;
 }
-.movie-card {
-  min-width: 120px;
-  max-width: 120px;
-  cursor: pointer;
-  border: 2px solid transparent;
-  border-radius: 8px;
-  padding: 5px;
-  transition: 0.2s;
-}
-.movie-card img {
+
+.adm-progress-track {
   width: 100%;
-  border-radius: 4px;
+  height: 2px;
+  background: rgba(26,26,26,0.1);
+  border-radius: 1px;
 }
-.movie-card p {
-  font-size: 0.8rem;
+.adm-progress-fill {
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 1px;
+  transition: width 0.8s ease;
+}
+
+.adm-live-indicators {
+  display: flex;
+  gap: var(--spacing-md);
+}
+.adm-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 0.7rem;
+  color: var(--color-on-surface-muted);
+}
+.adm-indicator strong { color: var(--color-primary); margin-left: 4px; }
+.adm-indicator-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.adm-dot-orange { background: #f59e0b; }
+.adm-dot-grey   { background: rgba(26,26,26,0.2); }
+
+.adm-empty-state {
+  margin-top: var(--spacing-md);
+  padding: var(--spacing-lg);
+  background: var(--color-surface-container-low);
+  border-radius: var(--radius-sm);
+  text-align: center;
+  color: var(--color-on-surface-muted);
+}
+
+/* ── SEARCH BOX ───────────────────────────────────────────────── */
+.adm-search-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid rgba(26,26,26,0.12);
+  border-radius: var(--radius-sm);
+  padding: 12px 16px;
+  background: var(--color-surface-container-lowest);
+  margin-bottom: var(--spacing-md);
+}
+.adm-search-icon { font-size: 1.2rem; color: var(--color-on-surface-muted); }
+.adm-search-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  color: var(--color-on-surface);
+}
+.adm-search-input:focus { outline: none; }
+.adm-search-input::placeholder { color: var(--color-on-surface-muted); }
+
+/* ── MOVIE THUMBNAILS ─────────────────────────────────────────── */
+.adm-movie-grid {
+  display: flex;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-lg);
+  overflow-x: auto;
+}
+.adm-movie-thumb {
+  flex-shrink: 0;
+  width: 110px;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity 0.2s, transform 0.2s;
+}
+.adm-movie-thumb:hover { opacity: 1; transform: translateY(-3px); }
+.adm-movie-thumb-active { opacity: 1; }
+
+.adm-movie-img {
+  width: 100%;
+  aspect-ratio: 2/3;
+  object-fit: cover;
+  border-radius: var(--radius-sm);
+  display: block;
+  margin-bottom: 6px;
+  border: 2px solid transparent;
+  transition: border-color 0.2s;
+}
+.adm-movie-thumb-active .adm-movie-img { border-color: var(--color-primary); }
+
+.adm-movie-label {
+  font-size: 0.6rem;
+  color: var(--color-on-surface-muted);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.movie-card.selected {
-  border-color: #4CAF50;
-  background: #1e1e1e;
+
+/* ── CREATE FORM ──────────────────────────────────────────────── */
+.adm-create-form {
+  background: var(--color-surface-container-lowest);
+  border-radius: var(--radius-sm);
+  padding: var(--spacing-lg);
+  box-shadow: var(--shadow-ambient);
 }
-.create-form {
-  background: #1e1e1e;
-  padding: 1.5rem;
-  border-radius: 8px;
+
+.adm-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-md);
+  margin-bottom: var(--spacing-md);
 }
-.submit-btn {
+
+.adm-submit-btn {
+  display: block;
   width: 100%;
-  font-size: 1.1rem;
-  margin-top: 1rem;
+  margin-top: var(--spacing-md);
+  padding: 16px;
+  background: var(--color-primary);
+  color: white;
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: opacity 0.2s;
+  letter-spacing: 0.12em;
 }
+.adm-submit-btn:hover:not(:disabled) { opacity: 0.85; }
+.adm-submit-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+.adm-success-msg {
+  text-align: center;
+  color: var(--color-on-surface-muted);
+  font-size: 0.7rem;
+  margin-top: var(--spacing-sm);
+}
+
+/* ── FOOTER ───────────────────────────────────────────────────── */
+.adm-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: var(--spacing-md) var(--spacing-md);
+  border-top: 1px solid rgba(26,26,26,0.07);
+  background: var(--color-surface-container-lowest);
+}
+
+.adm-footer-brand { color: var(--color-on-surface-muted); font-size: 0.65rem; }
+.adm-footer-links { display: flex; gap: var(--spacing-md); }
+.adm-footer-links a {
+  text-decoration: none;
+  color: var(--color-on-surface-muted);
+  font-size: 0.65rem;
+  transition: color 0.2s;
+}
+.adm-footer-links a:hover { color: var(--color-primary); }
 </style>

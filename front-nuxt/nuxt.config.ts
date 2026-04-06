@@ -3,18 +3,26 @@ export default defineNuxtConfig({
   compatibilityDate: '2025-07-15',
   devtools: { enabled: true },
   modules: ['@pinia/nuxt'],
+  app: {
+    head: {
+      link: [
+        {
+          rel: 'stylesheet',
+          href: 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Source+Serif+4:ital,opsz,wght@0,8..60,300;0,8..60,400;0,8..60,500;0,8..60,600;0,8..60,700;1,8..60,300;1,8..60,400&display=swap'
+        }
+      ]
+    }
+  },
   runtimeConfig: {
-    // Solo disponible en el servidor (SSR) — nunca llega al navegador
     apiUrlInternal: process.env.NUXT_API_URL_INTERNAL || 'http://laravel-app:8000',
     public: {
-      // La URL de tu API Laravel (el servicio 'laravel-app')
       apiBase: process.env.NUXT_PUBLIC_API_URL || 'http://localhost:8000',
-      // La URL en la que vive el Microservicio Árbitro interactivo de Node.js (el .env/docker-compose dice 3000)
       socketUrl: process.env.NUXT_PUBLIC_SOCKET_URL || 'http://localhost:3000'
     }
   },
   css: [
-    '@fortawesome/fontawesome-svg-core/styles.css'
+    '@fortawesome/fontawesome-svg-core/styles.css',
+    '~/assets/css/main.css'
   ],
   build: {
     transpile: [

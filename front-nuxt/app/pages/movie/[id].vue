@@ -2,212 +2,331 @@
 const route = useRoute()
 const movieId = route.params.id
 
-// Usamos nuestro Gestor de Comunicación para el detalle de la película
 const { data: movie, pending, error } = await CommunicationManager.getMovieById(movieId)
 
-// URLs de imágenes de alta calidad
 const backdropBase = 'https://image.tmdb.org/t/p/original'
-const posterBase = 'https://image.tmdb.org/t/p/w500'
+const posterBase   = 'https://image.tmdb.org/t/p/w500'
 
-// Función para transformar minutos (105) en texto (1h 45m)
 const formatRuntime = (minutes) => {
-  if (!minutes) return 'Desconocida'
-  const hours = Math.floor(minutes / 60)
-  const remainingMinutes = minutes % 60
-  return `${hours}h ${remainingMinutes}m`
+  if (!minutes) return 'N/A'
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  return `${h}h ${m}m`
 }
+
+const formatDate = (dateStr) => {
+  if (!dateStr) return 'N/A'
+  return new Date(dateStr).toLocaleDateString('es-ES', { month: 'long', year: 'numeric' }).toUpperCase()
+}
+
+// Director viene en movie.credits.crew
+const director = computed(() => {
+  const crew = movie.value?.credits?.crew || []
+  return crew.find(p => p.job === 'Director')?.name || 'Desconocido'
+})
+
+// Cast principales (primeros 3)
+const mainCast = computed(() => {
+  const cast = movie.value?.credits?.cast || []
+  return cast.slice(0, 3).map(a => a.name).join(', ') || 'N/A'
+})
+
+const scorePercent = computed(() => {
+  return Math.round((movie.value?.vote_average || 0) * 10)
+})
 </script>
 
 <template>
-  <div v-if="pending" class="loading">Cargando detalles de la película...</div>
-  <div v-else-if="error" class="error">Se produjo un error al cargar la película.</div>
-  
-  <div v-else-if="movie" class="movie-detail">
-    
-    <!-- 1. Cabecera espectacular con la imagen panorámica -->
-    <div class="backdrop" :style="{ backgroundImage: `url(${backdropBase}${movie.backdrop_path})` }">
-      <div class="backdrop-gradient">
-        <NuxtLink to="/" class="btn-back">← Volver a la cartelera</NuxtLink>
-      </div>
-    </div>
+  <div>
+    <div v-if="pending" class="status">Cargando película...</div>
+    <div v-else-if="error" class="status">Error al cargar la película.</div>
 
-    <!-- 2. Contenido Principal -->
-    <div class="content-wrapper">
-      <div class="poster-container">
-        <img v-if="movie.poster_path" :src="posterBase + movie.poster_path" :alt="movie.title" class="poster" />
-      </div>
+    <article v-else-if="movie" class="detail-page">
 
-      <div class="info-container">
-        <!-- Título -->
-        <h1>{{ movie.title }}</h1>
-        
-        <!-- Eslogan (NUEVO) -->
-        <p v-if="movie.tagline" class="tagline">"{{ movie.tagline }}"</p>
-
-        <!-- Datos Técnicos: Duración y Puntuación -->
-        <div class="tech-info">
-          <span class="runtime">⏱️ {{ formatRuntime(movie.runtime) }}</span>
-          <span class="rating">⭐ {{ Number(movie.vote_average || 0).toFixed(1) }} / 10</span>
-        </div>
-
-        <!-- Géneros (NUEVO) -->
-        <div class="genres">
-          <span v-for="genre in movie.genres" :key="genre.id" class="genre-tag">
-            {{ genre.name }}
-          </span>
-        </div>
-
-        <!-- Sinopsis -->
-        <div class="overview">
-          <h3>Sinopsis</h3>
-          <p>{{ movie.overview || 'Sinopsis no disponible.' }}</p>
+      <!-- ══ HERO: Imagen panorámica a pantalla completa ══ -->
+      <div
+        class="hero"
+        :style="movie.backdrop_path ? { backgroundImage: `url(${backdropBase}${movie.backdrop_path})` } : {}"
+      >
+        <div class="hero-gradient">
+          <div class="hero-inner">
+            <NuxtLink to="/" class="hero-back text-label">← Cartelera</NuxtLink>
+            <div class="hero-tag text-label">Ahora en cartelera</div>
+            <h1 class="hero-title">{{ movie.title }}</h1>
+          </div>
         </div>
       </div>
-    </div>
 
+      <!-- ══ CUERPO ══ -->
+      <div class="body-layout container">
+
+        <!-- COLUMNA IZQUIERDA: sinopsis -->
+        <div class="body-left">
+          <p class="body-eyebrow text-label">La Sinopsis</p>
+
+          <p class="body-tagline text-title" v-if="movie.tagline">
+            {{ movie.tagline }}
+          </p>
+
+          <p class="body-overview text-body">
+            {{ movie.overview || 'Sinopsis no disponible.' }}
+          </p>
+
+          <!-- Géneros -->
+          <div class="genre-list" v-if="movie.genres?.length">
+            <span
+              v-for="genre in movie.genres"
+              :key="genre.id"
+              class="genre-tag text-label"
+            >
+              {{ genre.name }}
+            </span>
+          </div>
+        </div>
+
+        <!-- COLUMNA DERECHA: ficha técnica + CTA -->
+        <div class="body-right">
+          <div class="tech-card">
+
+            <p class="tech-eyebrow text-label">Créditos &amp; Detalles</p>
+
+            <dl class="tech-list">
+              <div class="tech-row">
+                <dt class="text-label">Dirigida por</dt>
+                <dd>{{ director }}</dd>
+              </div>
+              <div class="tech-row">
+                <dt class="text-label">Starring</dt>
+                <dd>{{ mainCast }}</dd>
+              </div>
+              <div class="tech-row">
+                <dt class="text-label">Duración</dt>
+                <dd>{{ formatRuntime(movie.runtime) }}</dd>
+              </div>
+              <div class="tech-row">
+                <dt class="text-label">Estreno</dt>
+                <dd>{{ formatDate(movie.release_date) }}</dd>
+              </div>
+              <div class="tech-row" v-if="movie.vote_average">
+                <dt class="text-label">Puntuación</dt>
+                <dd class="score-value">
+                  {{ Number(movie.vote_average).toFixed(1) }}
+                  <span class="score-bar">
+                    <span class="score-fill" :style="{ width: scorePercent + '%' }"></span>
+                  </span>
+                </dd>
+              </div>
+            </dl>
+
+            <NuxtLink :to="`/booking/${movieId}`" class="btn-book text-label">
+              Reservar Entradas
+            </NuxtLink>
+
+            <p class="tech-fine text-label">Precios sujetos a disponibilidad de sala</p>
+          </div>
+        </div>
+
+      </div>
+
+    </article>
   </div>
 </template>
 
 <style scoped>
-/* Reset básico para esta página */
-.movie-detail {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background-color: #0f172a; /* Fondo oscuro elegante */
-  color: white;
-  min-height: 100vh;
-  padding-bottom: 50px;
-}
+/* ── HERO ─────────────────────────────────────────────────────── */
+.detail-page { background-color: var(--color-surface); }
 
-/* 1. Imagen panorámica superior */
-.backdrop {
+.hero {
   width: 100%;
-  height: 50vh;
-  min-height: 300px;
+  height: 75vh;
+  min-height: 480px;
+  background-color: var(--color-primary);
   background-size: cover;
   background-position: center 20%;
   position: relative;
 }
 
-/* El degradado hace que oscurezca abajo para fusionarse con la página */
-.backdrop-gradient {
+.hero-gradient {
   width: 100%;
   height: 100%;
-  background: linear-gradient(to bottom, rgba(15, 23, 42, 0.2) 0%, rgba(15, 23, 42, 1) 100%);
-  padding: 30px;
+  background: linear-gradient(
+    to bottom,
+    rgba(0,0,0,0.15) 0%,
+    rgba(249,249,249,0) 50%,
+    rgba(249,249,249,1) 100%
+  );
+  display: flex;
+  align-items: flex-end;
 }
 
-.btn-back {
-  color: white;
+.hero-inner {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--spacing-md) var(--spacing-md) var(--spacing-xl);
+  width: 100%;
+}
+
+.hero-back {
+  display: inline-block;
+  color: rgba(255,255,255,0.7);
   text-decoration: none;
-  font-weight: bold;
-  background: rgba(0, 0, 0, 0.5);
-  padding: 10px 15px;
-  border-radius: 6px;
-  transition: 0.3s;
+  margin-bottom: var(--spacing-xl);
+  transition: color 0.2s;
+  /* Posicionamos el botón arriba */
+  position: absolute;
+  top: var(--spacing-md);
+  left: var(--spacing-md);
 }
-.btn-back:hover {
-  background: rgba(255, 255, 255, 0.2);
+.hero-back:hover { color: white; }
+
+.hero-tag {
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 8px;
 }
 
-/* 2. Contenedor de la información principal */
-.content-wrapper {
-  max-width: 1000px;
-  margin: -100px auto 0; /* Lo subimos para que pise el final de la imagen panorámica */
-  padding: 0 20px;
-  display: flex;
-  gap: 40px;
-  position: relative;
-  z-index: 10;
-}
-
-/* Póster a la izquierda */
-.poster-container {
-  flex-shrink: 0;
-}
-.poster {
-  width: 300px;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(0,0,0,0.8);
-  border: 4px solid #1e293b;
-}
-
-/* Textos a la derecha */
-.info-container {
-  padding-top: 50px; /* Para alinearlo bien con el póster flotante */
-}
-
-h1 {
-  font-size: 3rem;
+.hero-title {
+  font-family: var(--font-serif);
+  font-size: clamp(3rem, 8vw, 6rem);
+  font-weight: 200;
+  color: white;
+  text-transform: uppercase;
+  letter-spacing: -0.02em;
+  line-height: 0.95;
   margin: 0;
-  line-height: 1.1;
+  text-shadow: 0 2px 40px rgba(0,0,0,0.3);
 }
 
-.tagline {
-  font-size: 1.2rem;
-  color: #94a3b8;
-  font-style: italic;
-  margin-top: 10px;
+/* ── BODY ─────────────────────────────────────────────────────── */
+.body-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: var(--spacing-xl);
+  align-items: start;
+  padding-top: var(--spacing-xl);
+  padding-bottom: var(--spacing-xl);
 }
 
-/* Datos técnicos y Géneros */
-.tech-info {
-  margin: 20px 0;
+/* COLUMNA IZQUIERDA */
+.body-eyebrow { color: var(--color-on-surface-muted); margin-bottom: var(--spacing-md); }
+
+.body-tagline {
+  font-size: 1.6rem;
+  line-height: 1.35;
+  color: var(--color-primary);
+  margin-bottom: var(--spacing-md);
+  max-width: 540px;
+}
+
+.body-overview {
+  font-size: 1rem;
+  line-height: 1.75;
+  color: var(--color-on-surface-muted);
+  max-width: 560px;
+  margin-bottom: var(--spacing-lg);
+}
+
+.genre-list {
   display: flex;
-  gap: 20px;
-  font-size: 1.1rem;
-}
-
-.genres {
-  display: flex;
-  gap: 10px;
+  gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 30px;
 }
 
 .genre-tag {
-  background-color: #3b82f6; /* Azul eléctrico */
   padding: 5px 12px;
-  border-radius: 20px;
-  font-size: 0.9rem;
-  font-weight: bold;
+  border: 1px solid rgba(26,26,26,0.2);
+  border-radius: var(--radius-full);
+  font-size: 0.65rem;
+  color: var(--color-on-surface-muted);
 }
 
-.overview h3 {
-  font-size: 1.3rem;
-  margin-bottom: 10px;
-  color: #cbd5e1;
+/* COLUMNA DERECHA */
+.body-right { position: sticky; top: var(--spacing-lg); }
+
+.tech-card {
+  background: var(--color-surface-container-lowest);
+  padding: var(--spacing-lg);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-ambient);
 }
 
-.overview p {
-  line-height: 1.7;
-  color: #e2e8f0;
-  font-size: 1.1rem;
+.tech-eyebrow {
+  color: var(--color-on-surface-muted);
+  font-size: 0.65rem;
+  margin-bottom: var(--spacing-md);
 }
 
-/* Ajustes para móvil */
-@media (max-width: 768px) {
-  .content-wrapper {
-    flex-direction: column;
-    align-items: center;
-    margin-top: -50px;
-  }
-  .poster {
-    width: 200px;
-  }
-  .info-container {
-    padding-top: 10px;
-    text-align: center;
-  }
-  .tech-info, .genres {
-    justify-content: center;
-  }
+.tech-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin: 0 0 var(--spacing-lg) 0;
+  padding: 0;
 }
 
-/* Extra: estilos de carga y error simples */
-.loading, .error {
+.tech-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: var(--spacing-md);
+  border-bottom: 1px solid rgba(26,26,26,0.07);
+}
+.tech-row:last-child { border-bottom: none; padding-bottom: 0; }
+
+.tech-row dt {
+  font-family: var(--font-sans);
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-on-surface-muted);
+}
+
+.tech-row dd {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 300;
+  color: var(--color-primary);
+  margin: 0;
+}
+
+/* Score bar */
+.score-value { display: flex; flex-direction: column; gap: 6px; }
+.score-bar {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: rgba(26,26,26,0.1);
+  border-radius: 1px;
+}
+.score-fill {
+  display: block;
+  height: 100%;
+  background: var(--color-primary);
+  border-radius: 1px;
+  transition: width 1s ease;
+}
+
+/* CTA */
+.btn-book {
+  display: block;
+  width: 100%;
+  padding: 16px;
+  background: var(--color-primary);
+  color: white;
+  text-decoration: none;
   text-align: center;
-  padding: 100px 20px;
-  font-size: 1.5rem;
-  color: #333;
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  transition: opacity 0.2s;
+}
+.btn-book:hover { opacity: 0.85; }
+
+.tech-fine {
+  text-align: center;
+  color: var(--color-on-surface-muted);
+  font-size: 0.6rem;
+  margin-top: var(--spacing-sm);
 }
 </style>
