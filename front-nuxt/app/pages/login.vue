@@ -9,7 +9,9 @@ const router = useRouter()
 
 // Si ya está logueado, redirige directamente
 if (authStore.isLoggedIn) {
-  navigateTo('/')
+  const route = useRoute()
+  const redirect = route.query.redirect as string
+  navigateTo(redirect || '/')
 }
 
 const email    = ref('')
@@ -26,7 +28,9 @@ async function handleLogin() {
   loading.value = false
 
   if (result.ok) {
-    router.push('/')
+    const route = useRoute()
+    const redirect = route.query.redirect as string
+    router.push(redirect || '/')
   } else {
     error.value = result.error || 'Credenciales incorrectas'
   }
