@@ -1,96 +1,169 @@
 // CommunicationManager encapsula y centraliza todas las llamadas al backend de Laravel
-// Para hacer peticiones HTTP usamos nuestra propia función 'useApi' (que soluciona el tema Docker vs Navegador)
 
-/**
- * Helper para llamadas $fetch bajo demanda (clics, formularios, acciones del usuario).
- * Resuelve la URL base correcta según si estamos en el servidor (Docker) o en el navegador.
- * Se usa en lugar de 'useApi' cuando el componente ya está montado.
- */
-function fetchApi(url: string, opciones: Record<string, any> = {}) {
-  const config = useRuntimeConfig();
-  const baseURL = import.meta.client ? config.public.apiBase : config.apiUrlInternal;
-  return $fetch(url, { baseURL, ...opciones });
+// ─────────────────────────────────────────────────────────────────────
+// fetchApi: helper para llamadas bajo demanda (clics, acciones del usuario).
+// - Resuelve la URL base correcta según Docker vs Navegador
+// - Inyecta automáticamente el header Authorization si hay token JWT
+// - Si recibe un 401, intenta renovar el token UNA vez y reintenta la petición
+// ─────────────────────────────────────────────────────────────────────
+async function fetchApi(url: string, opciones: Record<string, any> = {}) {
+  const config  = useRuntimeConfig()
+  const baseURL = import.meta.client ? config.public.apiBase : config.apiUrlInternal
+
+  // Obtenemos el token del store o directamente de localStorage como fallback
+  const getToken = (): string | null => {
+    if (import.meta.client) {
+      return localStorage.getItem('access_token')
+    }
+    return null
+  }
+
+  // Construimos los headers con Authorization si hay token disponible
+  const buildHeaders = (token: string | null): Record<string, string> => {
+    const headers: Record<string, string> = {
+      ...(opciones.headers || {}),
+    }
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+    return headers
+  }
+
+  const token = getToken()
+
+  try {
+    return await $fetch(url, {
+      baseURL,
+      ...opciones,
+      headers: buildHeaders(token),
+    })
+  } catch (err: any) {
+    // Si recibimos 401 (token expirado), intentamos renovarlo UNA vez
+    if (err?.status === 401 && token && import.meta.client) {
+      try {
+        // Llamamos al endpoint de refresh con el token actual
+        const respuesta: any = await $fetch('/api/refresh', {
+          baseURL,
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}` },
+        })
+
+        const nuevoToken = respuesta?.access_token
+        if (!nuevoToken) throw new Error('Sin token en la respuesta de refresh')
+
+        // Guardamos el nuevo token
+        localStorage.setItem('access_token', nuevoToken)
+
+        // Actualizamos el store de Pinia si está disponible
+        try {
+          const { useAuthStore } = await import('~/stores/useAuthStore')
+          const authStore = useAuthStore()
+          authStore.accessToken = nuevoToken
+        } catch { /* El store puede no estar disponible en todos los contextos */ }
+
+        // Reintentamos la petición original con el token renovado
+        return await $fetch(url, {
+          baseURL,
+          ...opciones,
+          headers: buildHeaders(nuevoToken),
+        })
+      } catch {
+        // Si el refresh también falla, limpiamos la sesión y redirigimos al login
+        if (import.meta.client) {
+          localStorage.removeItem('access_token')
+          navigateTo('/login')
+        }
+        throw err
+      }
+    }
+    throw err
+  }
 }
 
 export const CommunicationManager = {
-  
+
+  // ─────────────────────────────────────────────────────────────────
+  // PELÍCULAS (públicas, sin auth)
+  // ─────────────────────────────────────────────────────────────────
+
   /**
-   * Petición para conseguir el listado entero de películas de inicio
+   * Listado de películas populares para la pantalla de inicio
    */
   getPopularMovies() {
-    return useApi('/api/movies');
+    return useApi('/api/movies')
   },
 
   /**
-   * Petición para sacar el detalle gigante de una película concreta (sinopsis larga, duracion, fondo...)
+   * Detalle completo de una película concreta (sinopsis, backdrop, créditos...)
    */
   getMovieById(movieId: string) {
-    return useApi(`/api/movies/${movieId}`);
+    return useApi(`/api/movies/${movieId}`)
   },
 
   /**
-   * Petición para conseguir todas las sesiones (horarios, precio de sala, asientos libres)
+   * Sesiones programadas con disponibilidad de asientos para una película
    */
   getScreeningsByMovieId(movieId: string) {
-    return useApi(`/api/movies/${movieId}/screenings`);
+    return useApi(`/api/movies/${movieId}/screenings`)
   },
 
+  // ─────────────────────────────────────────────────────────────────
+  // PAGO (requiere sesión activa — envía token automáticamente)
+  // ─────────────────────────────────────────────────────────────────
+
   /**
-   * Función explícita para solicitar a Stripe (a través de nuestro Laravel) la intención de pago
-   * @param cantidadTotal La cantidad de dinero a cobrar (en euros)
+   * Solicita a Laravel la creación de un PaymentIntent de Stripe.
+   * Envía el token JWT en el header para identificar al usuario.
    */
   async solicitarIntencionDePagoStripe(cantidadTotal: number) {
-    // Cuando hacemos una petición a raíz de un "Click" de un botón (fuera del setup inicial), 
-    // Nuxt 3 requiere usar $fetch en lugar de useFetch. useFetch pierde su URL base si no es carga de página.
     try {
       const respuestaData = await fetchApi('/api/create-payment-intent', {
         method: 'POST',
-        body: { amount: cantidadTotal }
-      });
-      // Envolvemos la respuesta para que el UseBookingStore no se rompa (que espera .data.value)
-      return { data: { value: respuestaData }, error: { value: null } };
+        body: { amount: cantidadTotal },
+      })
+      return { data: { value: respuestaData }, error: { value: null } }
     } catch (err) {
-      return { data: { value: null }, error: { value: err } };
+      return { data: { value: null }, error: { value: err } }
     }
   },
 
-  // ----------------------------------------------------
-  // MÉTODOS DE ADMINISTRADOR
-  // ----------------------------------------------------
+  // ─────────────────────────────────────────────────────────────────
+  // ADMINISTRADOR (rutas protegidas — token inyectado automáticamente)
+  // ─────────────────────────────────────────────────────────────────
 
   /**
-   * Petición para buscar películas en TMDB desde nuestro propio buscador
+   * Buscar películas en TMDB a través del proxy de Laravel
    */
   searchMoviesProxy(query: string) {
-    return fetchApi(`/api/movies/search?query=${query}`);
+    return fetchApi(`/api/movies/search?query=${query}`)
   },
 
   /**
-   * Obtiene las opciones de Salas y Precios pre-creados para el admin
+   * Opciones de salas y precios disponibles para crear sesiones
    */
   getAdminCreationOptions() {
-    return fetchApi('/api/admin/options');
+    return fetchApi('/api/admin/options')
   },
 
   /**
-   * Obtiene la lista de sesiones activas con el número de asientos vendidos y total
+   * Lista de sesiones activas con ocupación para el panel de admin
    */
   getAdminActiveScreenings() {
-    return fetchApi('/api/admin/screenings');
+    return fetchApi('/api/admin/screenings')
   },
 
   /**
-   * Crea una sesión en base de datos mandando la petición pura a Laravel
+   * Crear una nueva sesión en la cartelera
    */
   createScreening(data: { tmdb_id: string, room_id: number, price_id: number, starts_at: string, language: string, format: string }) {
-    return fetchApi('/api/admin/screenings', { method: 'POST', body: data });
+    return fetchApi('/api/admin/screenings', { method: 'POST', body: data })
   },
 
   /**
-   * Petición para obtener las estadísticas globales del panel
+   * Estadísticas globales del panel de administración
    */
   getAdminGlobalStats() {
-    return fetchApi('/api/admin/stats');
-  }
+    return fetchApi('/api/admin/stats')
+  },
 
 }

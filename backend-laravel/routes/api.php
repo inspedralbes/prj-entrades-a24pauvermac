@@ -2,7 +2,20 @@
 
 use App\Http\Controllers\MovieController;
 use App\Http\Controllers\PaymentController;
+use App\Http\Controllers\Api\AuthController;
 use Illuminate\Support\Facades\Route;
+
+// ── AUTENTICACIÓN ──────────────────────────────────────────────
+// Rutas públicas
+Route::post('/register', [AuthController::class, 'register']);
+Route::post('/login',    [AuthController::class, 'login']);
+Route::post('/refresh',  [AuthController::class, 'refresh']);
+
+// Rutas protegidas por JWT
+Route::middleware('auth:api')->group(function () {
+    Route::post('/logout', [AuthController::class, 'logout']);
+    Route::get('/me',      [AuthController::class, 'me']);
+});
 
 /*
 |--------------------------------------------------------------------------

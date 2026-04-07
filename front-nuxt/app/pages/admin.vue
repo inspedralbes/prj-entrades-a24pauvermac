@@ -3,6 +3,9 @@ import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { useAdminStore } from '@/stores/useAdminStore'
 import { io } from 'socket.io-client'
 
+// Solo admins autenticados pueden acceder a esta página
+definePageMeta({ middleware: 'auth' })
+
 const adminStore = useAdminStore()
 const config = useRuntimeConfig()
 
