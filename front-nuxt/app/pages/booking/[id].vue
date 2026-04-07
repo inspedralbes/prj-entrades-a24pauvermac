@@ -1,6 +1,7 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useBookingStore } from '~/stores/useBookingStore'
+import { useAuthStore } from '~/stores/useAuthStore'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import { loadStripe } from '@stripe/stripe-js'
 
@@ -98,7 +99,18 @@ function formatFullDate(fechaIso) {
 
 // ======================= FASE 3 WEBSOCKETS =======================
 
+const router = useRouter()
+
 function irAlPasoDeAsientos() {
+  const authStore = useAuthStore()
+  
+  // Verificar autenticación antes de pasar a selección de asientos
+  if (!authStore.isLoggedIn) {
+    const currentPath = route.fullPath
+    router.push({ path: '/login', query: { redirect: currentPath } })
+    return
+  }
+  
   pasoActual.value = 2
 
   if ($socket) {

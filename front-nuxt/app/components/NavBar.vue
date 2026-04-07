@@ -1,3 +1,30 @@
+<script setup>
+import { ref, onMounted } from 'vue'
+
+const authStore = useAuthStore()
+const router = useRouter()
+
+const isDropdownOpen = ref(false)
+
+onMounted(() => {
+  authStore.hydrate()
+})
+
+const toggleDropdown = () => {
+  isDropdownOpen.value = !isDropdownOpen.value
+}
+
+const closeDropdown = () => {
+  isDropdownOpen.value = false
+}
+
+const handleLogout = async () => {
+  await authStore.logout()
+  closeDropdown()
+  router.push('/')
+}
+</script>
+
 <template>
   <nav class="navbar">
     <div class="navbar-brand">
@@ -5,17 +32,28 @@
     </div>
     <div class="navbar-actions">
       <NuxtLink to="/" class="navbar-icon" aria-label="Inicio">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-          <polyline points="9 22 9 12 15 12 15 22"></polyline>
-        </svg>
+        <font-awesome-icon icon="fa-solid fa-house" />
       </NuxtLink>
-      <button class="navbar-icon" aria-label="Usuario">
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-          <circle cx="12" cy="7" r="4"></circle>
-        </svg>
-      </button>
+      <div class="user-dropdown-container">
+        <button class="navbar-icon" aria-label="Usuario" @click="toggleDropdown">
+          <font-awesome-icon icon="fa-solid fa-user" />
+        </button>
+        <div v-if="isDropdownOpen" class="user-dropdown">
+          <template v-if="authStore.isLoggedIn">
+            <div class="dropdown-user-info">
+              Hola, {{ authStore.user?.name }}
+            </div>
+            <button class="dropdown-item" @click="handleLogout">
+              Logout
+            </button>
+          </template>
+          <template v-else>
+            <NuxtLink to="/login" class="dropdown-item" @click="closeDropdown">
+              Iniciar sesión
+            </NuxtLink>
+          </template>
+        </div>
+      </div>
     </div>
   </nav>
 </template>
@@ -72,5 +110,51 @@
 .navbar-icon svg {
   width: 24px;
   height: 24px;
+}
+
+.navbar-icon :deep(svg) {
+  color: black;
+}
+
+.user-dropdown-container {
+  position: relative;
+}
+
+.user-dropdown {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-outline);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+  overflow: hidden;
+  z-index: 200;
+}
+
+.dropdown-user-info {
+  padding: 12px 16px;
+  font-weight: 600;
+  color: var(--color-on-surface);
+  border-bottom: 1px solid var(--color-outline);
+}
+
+.dropdown-item {
+  display: block;
+  width: 100%;
+  padding: 12px 16px;
+  text-align: left;
+  background: none;
+  border: none;
+  color: var(--color-on-surface);
+  cursor: pointer;
+  font-size: 0.875rem;
+  text-decoration: none;
+}
+
+.dropdown-item:hover {
+  background: var(--color-surface-container-low);
 }
 </style>
