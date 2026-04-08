@@ -166,4 +166,24 @@ export const CommunicationManager = {
     return fetchApi('/api/admin/stats')
   },
 
+  // ─────────────────────────────────────────────────────────────────
+  // TICKETS (requiere sesión activa)
+  // ─────────────────────────────────────────────────────────────────
+
+  /**
+   * Genera un ticket PDF después de un pago exitoso.
+   * Devuelve la URL del PDF para descargar/ver.
+   */
+  async generateTicket(bookingData: { screening_id: number, seats: number[], total_price: number }) {
+    try {
+      const respuestaData = await fetchApi('/api/tickets/generate', {
+        method: 'POST',
+        body: bookingData,
+      })
+      return { data: { value: respuestaData }, error: { value: null } }
+    } catch (err) {
+      return { data: { value: null }, error: { value: err } }
+    }
+  },
+
 }

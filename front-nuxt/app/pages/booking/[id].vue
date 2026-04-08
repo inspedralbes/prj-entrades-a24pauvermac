@@ -286,6 +286,32 @@ async function iniciarProcesoDePago() {
   procesandoPago.value = false
 }
 
+const ticketUrl = ref('')
+const reservationCode = ref('')
+const showTicketModal = ref(false)
+
+async function generarTicket() {
+  const bookingData = {
+    screening_id: sesionSeleccionada.value.id,
+    seats: gestorDeReservas.selectedSeats,
+    total_price: sesionSeleccionada.value.precio * entradasSeleccionadas.value
+  }
+
+  const { data, error } = await CommunicationManager.generateTicket(bookingData)
+
+  if (error.value) {
+    alert('Error al generar el ticket: ' + (error.value?.data?.message || 'Error desconocido'))
+    return
+  }
+
+  const respuesta = data.value
+  if (respuesta.success) {
+    ticketUrl.value = respuesta.pdf_url
+    reservationCode.value = respuesta.reservation_code
+    showTicketModal.value = true
+  }
+}
+
 async function confirmarElPagoFinal() {
   procesandoPago.value = true
 
@@ -302,9 +328,19 @@ async function confirmarElPagoFinal() {
     alert('✅ ¡PAGO DE PRUEBA REALIZADO CON ÉXITO! Las entradas son tuyas.')
     mostrarPasarelaStripe.value = false
     procesandoPago.value = false
+    
+    // Generar el ticket PDF
+    await generarTicket()
+    
     gestorDeReservas.clearCart()
     pasoActual.value = 1
   }
+}
+
+function cerrarTicketModal() {
+  showTicketModal.value = false
+  ticketUrl.value = ''
+  reservationCode.value = ''
 }
 
 function cancelarPagoManualmente() {
@@ -506,6 +542,28 @@ function cancelarPagoManualmente() {
       </div>
     </div>
 
+    <!-- ======================= MODAL TICKET ========================== -->
+    <div class="modal-ticket-fondo" v-if="showTicketModal">
+      <div class="modal-ticket-contenido">
+        <h2 class="session-heading" style="font-size: 1.8rem; margin-bottom: 8px;">¡Entrada comprada!</h2>
+        <p class="text-body" style="margin-bottom: 16px;">Tu reserva ha sido confirmada.</p>
+        
+        <div class="ticket-info-box">
+          <p class="text-label" style="margin-bottom: 8px;">Código de reserva:</p>
+          <p class="reservation-code-display">{{ reservationCode }}</p>
+        </div>
+
+        <div class="modal-ticket-botones">
+          <a :href="ticketUrl" target="_blank" class="btn-cta">
+            Ver / Descargar entrada
+          </a>
+          <button class="btn-secondary" @click="cerrarTicketModal">
+            Cerrar
+          </button>
+        </div>
+      </div>
+    </div>
+
   </div>
 </template>
 
@@ -682,4 +740,12 @@ function cancelarPagoManualmente() {
 .contenedor-caja-fuerte { min-height: 220px; padding: var(--spacing-sm) 0; }
 .modal-botones { display: flex; gap: var(--spacing-sm); margin-top: var(--spacing-md); align-items: stretch; }
 .modal-pay-btn { background: var(--color-primary); color: white; margin-top: 0; flex: 1; }
+
+/* MODAL TICKET */
+.modal-ticket-fondo { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(6px); }
+.modal-ticket-contenido { background: var(--color-surface-container-lowest); padding: var(--spacing-lg); border-radius: var(--radius-sm); width: 400px; color: var(--color-on-surface); box-shadow: 0 40px 80px rgba(0,0,0,0.25); text-align: center; }
+.ticket-info-box { background: var(--color-surface-container-low); padding: var(--spacing-md); border-radius: var(--radius-sm); margin: var(--spacing-md) 0; }
+.reservation-code-display { font-family: var(--font-serif); font-size: 1.2rem; font-weight: 600; letter-spacing: 2px; color: var(--color-primary); }
+.modal-ticket-botones { display: flex; flex-direction: column; gap: var(--spacing-sm); }
+.modal-ticket-botones .btn-cta { margin-top: 0; }
 </style>

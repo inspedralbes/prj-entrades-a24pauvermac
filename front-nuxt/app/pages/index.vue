@@ -2,7 +2,7 @@
 const { data: movies, pending, error } = await CommunicationManager.getPopularMovies();
 
 const imgBasePoster = 'https://image.tmdb.org/t/p/w300';
-const imgBaseBackdrop = 'https://image.tmdb.org/t/p/w780';
+const imgBaseBackdrop = 'https://image.tmdb.org/t/p/original';
 
 const currentSlide = ref(0);
 let autoplayInterval = null;
