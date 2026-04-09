@@ -151,7 +151,8 @@ io.on('connection', (socket) => {
 });
 
 // 4. ARRANCAR EL MOTOR
-const PORT = process.env.PORT || 3000;
-httpServer.listen(PORT, () => {
+const PORT = process.env.PORT || 3001;
+const HOST = process.env.HOST || '0.0.0.0';
+httpServer.listen(PORT, HOST, () => {
   console.log(`🚀 Servicio WebSocket Árbitro vigilando en el puerto ${PORT}`);
 });

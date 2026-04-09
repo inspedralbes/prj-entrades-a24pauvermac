@@ -13,11 +13,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Copy production env files
-        run: |
-          cp backend-laravel/.env.production backend-laravel/.env
-          cp front-nuxt/.env.production front-nuxt/.env
-
       - name: Deploy to server via SSH
         uses: appleboy/ssh-action@v1.0.0
         with:
@@ -35,6 +30,10 @@ jobs:
             cd backend-laravel
             composer install --no-dev --optimize-autoloader
             
+            # Copy production env and generate key
+            cp .env.production .env
+            php artisan key:generate
+            
             # Run migrations
             php artisan migrate --force
             
@@ -48,16 +47,21 @@ jobs:
             
             # Install/update Nuxt dependencies and build
             cd ../front-nuxt
+            cp .env.production .env 2>/dev/null || true
             npm install
             npm run build
             
-            # Restart services
-            cd ../backend-laravel
-            php artisan serve --daemon --port=8000 --env=production || true
+            # Restart all services with PM2
+            cd /var/www/tiquet-master
             
-            # Restart Node and Nuxt with PM2
-            cd ../backend-node
+            # Restart Laravel on all interfaces
+            pm2 restart laravel || pm2 start "php artisan serve --host=0.0.0.0 --port=8000" --name laravel
+            
+            # Restart Node WebSocket
             pm2 restart node-socket || pm2 start src/index.js --name node-socket
             
-            cd ../front-nuxt
-            pm2 restart nuxt-app || pm2 start npm -- run start -- --port 3000 --prefix /var/www/tiquet-master/front-nuxt --name nuxt-app
+            # Restart Nuxt
+            pm2 restart nuxt-app || pm2 start npm -- run preview -- --port 3000 --host 0.0.0.0 --name nuxt-app
+            
+            # Save PM2 config for reboot
+            pm2 save
