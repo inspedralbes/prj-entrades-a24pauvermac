@@ -49,7 +49,7 @@ jobs:
             git pull origin main
             
             # Setup Laravel
-            cd backend-laravel
+            cd /var/www/tiquet-master/backend-laravel
             cp .env.production .env 2>/dev/null || true
             
             # Install/update PHP dependencies
@@ -73,29 +73,46 @@ jobs:
             php artisan cache:clear --no-interaction
             
             # Setup Node backend
-            cd ../backend-node
+            cd /var/www/tiquet-master/backend-node
             npm install --production
             
             # Setup Nuxt frontend
-            cd ../front-nuxt
+            cd /var/www/tiquet-master/front-nuxt
             cp .env.production .env 2>/dev/null || true
             npm install --no-audit --no-fund
             npm run build
             
-            # Restart all services with PM2
+            # Verify Nuxt build exists
+            if [ ! -d ".output" ]; then
+              echo "ERROR: Nuxt build failed - .output directory not found"
+              exit 1
+            fi
+            
+            # Restart all services with PM2 (without deleting all)
             cd /var/www/tiquet-master
             
-            # Stop old processes if exist
-            pm2 delete all 2>/dev/null || true
+            # Stop only our specific processes
+            pm2 stop laravel 2>/dev/null || true
+            pm2 delete laravel 2>/dev/null || true
+            pm2 stop node-socket 2>/dev/null || true
+            pm2 delete node-socket 2>/dev/null || true
+            pm2 stop nuxt-app 2>/dev/null || true
+            pm2 delete nuxt-app 2>/dev/null || true
             
             # Start Laravel on all interfaces
-            pm2 start "php artisan serve --host=0.0.0.0 --port=8000" --name laravel --cwd /var/www/tiquet-master/backend-laravel
+            cd /var/www/tiquet-master/backend-laravel
+            pm2 start "php artisan serve --host=0.0.0.0 --port=8000" --name laravel
             
             # Start Node WebSocket
-            pm2 start src/index.js --name node-socket --cwd /var/www/tiquet-master/backend-node
+            cd /var/www/tiquet-master/backend-node
+            pm2 start src/index.js --name node-socket
             
-            # Start Nuxt
-            pm2 start npm -- run preview -- --port 3000 --host 0.0.0.0 --name nuxt-app --cwd /var/www/tiquet-master/front-nuxt
+            # Start Nuxt using direct path to binary
+            cd /var/www/tiquet-master/front-nuxt
+            pm2 start ./node_modules/.bin/nuxt -- preview --port 3000 --host 0.0.0.0 --name nuxt-app
             
-            # Save PM2 config for reboot
-            pm2 save
+            # Wait a moment and verify services
+            sleep 5
+            
+            # Check status
+            pm2 status
