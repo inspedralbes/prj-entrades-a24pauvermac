@@ -1,0 +1,63 @@
+name: Deploy to Production
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Copy production env files
+        run: |
+          cp backend-laravel/.env.production backend-laravel/.env
+          cp front-nuxt/.env.production front-nuxt/.env
+
+      - name: Deploy to server via SSH
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          port: 22
+          script: |
+            cd /var/www/tiquet-master
+            
+            # Pull latest code
+            git pull origin main
+            
+            # Install/update PHP dependencies
+            cd backend-laravel
+            composer install --no-dev --optimize-autoloader
+            
+            # Run migrations
+            php artisan migrate --force
+            
+            # Clear and cache config
+            php artisan config:clear
+            php artisan cache:clear
+            
+            # Install/update Node dependencies
+            cd ../backend-node
+            npm install --production
+            
+            # Install/update Nuxt dependencies and build
+            cd ../front-nuxt
+            npm install
+            npm run build
+            
+            # Restart services
+            cd ../backend-laravel
+            php artisan serve --daemon --port=8000 --env=production || true
+            
+            # Restart Node and Nuxt with PM2
+            cd ../backend-node
+            pm2 restart node-socket || pm2 start src/index.js --name node-socket
+            
+            cd ../front-nuxt
+            pm2 restart nuxt-app || pm2 start npm -- run start -- --port 3000 --prefix /var/www/tiquet-master/front-nuxt --name nuxt-app
