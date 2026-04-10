@@ -17,7 +17,7 @@ return new class extends Migration
             $table->string('email', 50)->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password'); // Por defecto en Laravel es 255
-            $table->enum('role', ['admin', 'client'])->default('client');
+            $table->enum('role', ['admin', 'client', 'user'])->default('client');
             $table->rememberToken();
             $table->timestamps();
         });
