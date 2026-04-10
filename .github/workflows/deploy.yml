@@ -110,9 +110,9 @@ jobs:
             echo "Desplegando la aplicación con Docker Compose..."
             docker compose -f docker-compose.prod.yml up -d --build
 
-            echo "Ejecutando migraciones..."
+            echo "Ejecutando migraciones y seeders..."
             sleep 15
-            docker exec tiquet_laravel_prod php artisan migrate --force
+            docker exec tiquet_laravel_prod php artisan migrate --seed --force
 
             echo "Creando enlace simbólico de storage..."
             docker exec tiquet_laravel_prod php artisan storage:link  
