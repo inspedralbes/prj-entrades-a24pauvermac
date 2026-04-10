@@ -1,118 +1,94 @@
-name: Deploy to Production
+name: Deploy and Update Services - TiquetMaster
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
 
 jobs:
   deploy:
+    name: Full Deploy Process
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Deploy to server via SSH
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Update, Configure and Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          MYSQL_PASSWORD: ${{ secrets.MYSQL_PASSWORD }}
+          MYSQL_ROOT_PASSWORD: ${{ secrets.MYSQL_ROOT_PASSWORD }}
+          LARAVEL_APP_KEY: ${{ secrets.LARAVEL_APP_KEY }}
+          API_URL: ${{ secrets.API_URL }}
+          SOCKET_URL: ${{ secrets.SOCKET_URL }}
+          STRIPE_SECRET: ${{ secrets.STRIPE_SECRET }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          TMDB_TOKEN: ${{ secrets.TMDB_TOKEN }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           password: ${{ secrets.SSH_PASSWORD }}
           port: 22
+          envs: MYSQL_PASSWORD,MYSQL_ROOT_PASSWORD,LARAVEL_APP_KEY,API_URL,SOCKET_URL,STRIPE_SECRET,JWT_SECRET,TMDB_API_KEY,TMDB_TOKEN
           script: |
-            # Install essential tools if not present
-            which git || apt-get update && apt-get install -y git
-            which composer || (curl -sS https://getcomposer.org/installer | php -- --install-dir=/usr/local/bin --filename=composer)
-            which node || (curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs)
-            which pm2 || npm install -g pm2
-            
-            # Install Redis if not present
-            which redis-server || apt-get install -y redis-server
-            systemctl enable redis 2>/dev/null || true
-            systemctl start redis 2>/dev/null || true
-            
-            # Create project directory and clone if not exists
+            # Asegurar que existe el directorio y es un repositorio Git
             mkdir -p /var/www/tiquet-master
-            cd /var/www/tiquet-master
-            
-            # Initialize git repo if not exists
-            if [ ! -d .git ]; then
+            cd /var/www/tiquet-master || exit
+
+            if [ ! -d ".git" ]; then
+              echo "Inicializando repositorio Git nuevo..."
               git init
               git remote add origin https://github.com/inspedralbes/prj-entrades-a24pauvermac.git
-              git config core.autocrlf input
+              git fetch origin
+              git checkout -t origin/main -f || git checkout -b main
             fi
-            
-            # Pull latest code
-            git fetch origin
-            git checkout -f main
+
+            echo "Descargando últimos cambios de Git..."
+            git reset --hard origin/main
             git pull origin main
-            
-            # Setup Laravel
-            cd /var/www/tiquet-master/backend-laravel
-            cp .env.production .env 2>/dev/null || true
-            
-            # Install/update PHP dependencies
-            composer install --no-dev --optimize-autoloader --no-interaction
-            
-            # Generate key if not set
-            php artisan key:generate --no-interaction 2>/dev/null || true
-            
-            # Setup MySQL if needed
-            mysql -u root -e "CREATE DATABASE IF NOT EXISTS tiquet_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;" 2>/dev/null || true
-            mysql -u root -e "DROP USER IF EXISTS 'tiquet_user'@'localhost';" 2>/dev/null || true
-            mysql -u root -e "CREATE USER 'tiquet_user'@'localhost' IDENTIFIED BY 'k7#Gp\$2MqL9!xV4@';" 2>/dev/null || true
-            mysql -u root -e "GRANT ALL PRIVILEGES ON tiquet_db.* TO 'tiquet_user'@'localhost';" 2>/dev/null || true
-            mysql -u root -e "FLUSH PRIVILEGES;" 2>/dev/null || true
-            
-            # Run migrations
-            php artisan migrate --force --no-interaction
-            
-            # Clear and cache config
-            php artisan config:clear --no-interaction
-            php artisan cache:clear --no-interaction
-            
-            # Setup Node backend
-            cd /var/www/tiquet-master/backend-node
-            npm install --production
-            
-            # Setup Nuxt frontend
-            cd /var/www/tiquet-master/front-nuxt
-            cp .env.production .env 2>/dev/null || true
-            npm install --no-audit --no-fund
-            npm run build
-            
-            # Verify Nuxt build exists
-            if [ ! -d ".output" ]; then
-              echo "ERROR: Nuxt build failed - .output directory not found"
-              exit 1
-            fi
-            
-            # Restart all services with PM2 (without deleting all)
-            cd /var/www/tiquet-master
-            
-            # Stop only our specific processes
-            pm2 stop laravel 2>/dev/null || true
-            pm2 delete laravel 2>/dev/null || true
-            pm2 stop node-socket 2>/dev/null || true
-            pm2 delete node-socket 2>/dev/null || true
-            pm2 stop nuxt-app 2>/dev/null || true
-            pm2 delete nuxt-app 2>/dev/null || true
-            
-            # Start Laravel on all interfaces
-            cd /var/www/tiquet-master/backend-laravel
-            pm2 start "php artisan serve --host=0.0.0.0 --port=8000" --name laravel
-            
-            # Start Node WebSocket
-            cd /var/www/tiquet-master/backend-node
-            pm2 start src/index.js --name node-socket
-            
-            # Start Nuxt using direct path to binary
-            cd /var/www/tiquet-master/front-nuxt
-            pm2 start ./node_modules/.bin/nuxt -- preview --port 3000 --host 0.0.0.0 --name nuxt-app
-            
-            # Wait a moment and verify services
-            sleep 5
-            
-            # Check status
-            pm2 status
+
+            echo "Configurando .env maestro (Docker)..."
+            echo "DB_DATABASE=tiquet_db" > .env
+            echo "DB_USERNAME=tiquet_user" >> .env
+            echo "DB_PASSWORD=$MYSQL_PASSWORD" >> .env
+            echo "DB_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD" >> .env
+
+            echo "Configurando entorno de backend-laravel..."
+            cd ./backend-laravel
+            cp .env.example .env 2>/dev/null || true
+            echo "APP_ENV=production" >> .env
+            echo "APP_DEBUG=false" >> .env
+            echo "APP_URL=$API_URL" >> .env
+            echo "APP_KEY=$LARAVEL_APP_KEY" >> .env
+            echo "DB_CONNECTION=mysql" >> .env
+            echo "DB_HOST=mysql" >> .env
+            echo "DB_PORT=3306" >> .env
+            echo "DB_DATABASE=tiquet_db" >> .env
+            echo "DB_USERNAME=tiquet_user" >> .env
+            echo "DB_PASSWORD=$MYSQL_PASSWORD" >> .env
+            echo "REDIS_CLIENT=phpredis" >> .env
+            echo "REDIS_HOST=redis" >> .env
+            echo "REDIS_PORT=6379" >> .env
+            echo "REDIS_PASSWORD=null" >> .env
+            echo "STRIPE_SECRET=$STRIPE_SECRET" >> .env
+            echo "JWT_SECRET=$JWT_SECRET" >> .env
+            echo "TMDB_API_KEY=$TMDB_API_KEY" >> .env
+            echo "TMDB_TOKEN=$TMDB_TOKEN" >> .env
+            cd ..
+
+            echo "Configurando entorno de backend-node..."
+            cd ./backend-node
+            cp .env.example .env 2>/dev/null || true
+            cd ..
+
+            echo "Configurando entorno del frontend-nuxt..."
+            cd ./front-nuxt
+            echo "NUXT_PUBLIC_API_URL=$API_URL" > .env
+            echo "NUXT_PUBLIC_SOCKET_URL=$SOCKET_URL" >> .env
+            cd ..
+
+            echo "Desplegando la aplicación con Docker Compose..."
+            docker compose -f docker-compose.prod.yml up -d --build
+
+            echo "¡Despliegue finalizado con éxito!"

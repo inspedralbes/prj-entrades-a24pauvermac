@@ -42,7 +42,7 @@ async function handleLogin() {
 
     <!-- Cabecera -->
     <header class="auth-header">
-      <NuxtLink to="/" class="auth-brand text-label">UT·Cinema</NuxtLink>
+      <NuxtLink to="/" class="auth-brand text-label">VMK·Cinema</NuxtLink>
     </header>
 
     <!-- Hero text -->
