@@ -49,10 +49,25 @@ jobs:
             git pull origin main
 
             echo "Configurando .env maestro (Docker)..."
-            echo "DB_DATABASE=tiquet_db" > .env
-            echo "DB_USERNAME=tiquet_user" >> .env
-            echo "DB_PASSWORD=$MYSQL_PASSWORD" >> .env
-            echo "DB_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD" >> .env
+            cat > .env << EOF
+            DB_DATABASE=tiquet_db
+            DB_USERNAME=tiquet_user
+            DB_PASSWORD=$MYSQL_PASSWORD
+            DB_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
+            APP_KEY=$LARAVEL_APP_KEY
+            APP_ENV=production
+            APP_DEBUG=false
+            APP_URL=$API_URL
+            LARAVEL_API_URL=$API_URL
+            NODE_SOCKET_URL=$SOCKET_URL
+            REDIS_CLIENT=phpredis
+            REDIS_HOST=redis
+            REDIS_PORT=6379
+            STRIPE_SECRET=$STRIPE_SECRET
+            JWT_SECRET=$JWT_SECRET
+            TMDB_API_KEY=$TMDB_API_KEY
+            TMDB_TOKEN=$TMDB_TOKEN
+            EOF
 
             echo "Configurando entorno de backend-laravel..."
             cd ./backend-laravel
@@ -88,7 +103,17 @@ jobs:
             echo "NUXT_PUBLIC_SOCKET_URL=$SOCKET_URL" >> .env
             cd ..
 
+            echo "Regenerando volumen de Laravel..."
+            docker compose -f docker-compose.prod.yml down
+            docker volume rm tiquet-master_laravel_code 2>/dev/null || true
+
             echo "Desplegando la aplicación con Docker Compose..."
             docker compose -f docker-compose.prod.yml up -d --build
 
+            echo "Ejecutando migraciones..."
+            sleep 15
+            docker exec tiquet_laravel_prod php artisan migrate --force
+
+            echo "Creando enlace simbólico de storage..."
+            docker exec tiquet_laravel_prod php artisan storage:link  
             echo "¡Despliegue finalizado con éxito!"

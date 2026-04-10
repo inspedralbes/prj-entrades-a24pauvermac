@@ -112,8 +112,9 @@ class TicketController extends Controller
                 'totalPrice' => number_format($validated['total_price'], 2),
             ];
 
-            // Generar el PDF
-            $pdf = Pdf::loadView('tickets.ticket', $data);
+            // Generar el PDF con soporte para imágenes externas
+            $pdf = Pdf::loadView('tickets.ticket', $data)
+                      ->setOptions(['isRemoteEnabled' => true]);
 
             // Nombre del archivo: reservation_code.pdf
             $filename = $reservationCode . '.pdf';
