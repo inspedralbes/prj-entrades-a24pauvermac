@@ -113,6 +113,11 @@ function irAlPasoDeAsientos() {
   
   pasoActual.value = 2
 
+  // FALTABA ESTO: Inyectamos los que ya estaban fijos en MySQL (ej: los del seeder)
+  if (sesionSeleccionada.value?.asientos_ocupados_db) {
+    gestorDeReservas.lockedByOthers = [...sesionSeleccionada.value.asientos_ocupados_db]
+  }
+
   if ($socket) {
     $socket.emit('unirse_a_sesion', sesionSeleccionada.value.id)
   }

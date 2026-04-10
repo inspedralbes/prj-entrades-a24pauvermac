@@ -28,9 +28,10 @@ export const useBookingStore = defineStore('booking', () => {
 
   // --- NUEVAS FUNCIONES DE WEBSOCKET (TIEMPO REAL) ---
   
-  // Para cargar el golpe inicial de la base de datos de RAM de Node.js
+  // Para cargar el golpe inicial de la base de datos o de RAM de Node.js
   function setInitialLockedSeats(seats: number[]) {
-    lockedByOthers.value = seats;
+    // IMPORTANTE: Mergeamos para no machacar los de BBDD con los de Redis
+    lockedByOthers.value = Array.from(new Set([...lockedByOthers.value, ...seats]));
   }
 
   // Cuando otra persona pulsa una silla y recibimos la onda de choque en nuestra consola

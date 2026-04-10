@@ -77,14 +77,21 @@ class MovieController extends Controller
             // 3. Buscamos el precio para mandarlo tambien
             $precio = \App\Models\Pricing::find($sesion->price_id);
 
-            // 4. Usamos el accessor del modelo Screening para obtener los asientos ocupados
-            // La logica de conteo vive en Screening::getOccupiedSeatsAttribute(), no repetimos codigo aqui
+            // 4. Usamos el accessor del modelo Screening para obtener la cantidad
             $asientosOcupados = $sesion->occupied_seats;
-
-            // 5. Resta simple
             $asientosDisponibles = $capacidadTotal - $asientosOcupados;
 
-            // 6. Agrupamos los datos limpios para evitar mandar campos basura a Nuxt
+            // FALTABA ESTO: Recopilar QUÉ asientos exactos están cogidos en la BBDD
+            $reservas = \App\Models\Booking::where('screening_id', $sesion->id)
+                                            ->where('status', 'confirmed')->get();
+            $listaIDs = [];
+            foreach ($reservas as $reserva) {
+                if(is_array($reserva->seats_id)) {
+                    $listaIDs = array_merge($listaIDs, $reserva->seats_id);
+                }
+            }
+
+            // 5. Agrupamos los datos limpios para enviarlos a Nuxt
             $datosLimpios = array(
                 'id' => $sesion->id,
                 'hora_inicio' => $sesion->starts_at,
@@ -93,7 +100,8 @@ class MovieController extends Controller
                 'precio' => $precio->price,
                 'sala_nombre' => $sala->name,
                 'capacidad_total' => $capacidadTotal,
-                'asientos_disponibles' => $asientosDisponibles
+                'asientos_disponibles' => $asientosDisponibles,
+                'asientos_ocupados_db' => array_values(array_unique($listaIDs)) // NUEVA PROP!
             );
 
             array_push($listaFinal, $datosLimpios);
