@@ -94,6 +94,7 @@ async function handleLogin() {
 
       </form>
 
+      
       <!-- Link a register -->
       <p class="auth-switch text-body">
         ¿No tienes acceso?
