@@ -17,7 +17,7 @@ RUN apk add --no-cache \
 RUN docker-php-ext-configure gd --with-freetype --with-jpeg \
     && docker-php-ext-install -j$(nproc) pdo_mysql mbstring exif gd zip bcmath pcntl
 
-COPY --from=composer:2 /usr/bin/composer /usr/bin/comåçposer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
 WORKDIR /var/www/html
 
