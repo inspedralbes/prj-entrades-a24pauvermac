@@ -46,7 +46,10 @@ RUN rm -rf /root/.composer
 
 # Configurar permisos para los directorios de Laravel
 RUN chown -R www-data:www-data storage bootstrap/cache \
-    && chmod -R 777 storage bootstrap/cache
+    && chmod -R 777 storage bootstrap/cache \
+    && mkdir -p storage/framework/views \
+    storage/framework/cache/data \
+    storage/framework/sessions
 
 EXPOSE 9000
 
