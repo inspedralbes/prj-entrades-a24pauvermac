@@ -37,7 +37,7 @@ async function handleRegister() {
   <div class="auth-page">
 
     <header class="auth-header">
-      <NuxtLink to="/" class="auth-brand text-label">UT·Cinema</NuxtLink>
+      <NuxtLink to="/" class="auth-brand text-label">VMK·Cinema</NuxtLink>
     </header>
 
     <div class="auth-hero">
@@ -68,7 +68,7 @@ async function handleRegister() {
             v-model="email"
             type="email"
             class="auth-input"
-            placeholder="curator@ut-cinema.com"
+            placeholder="curator@vmk-cinema.com"
             required
             autocomplete="email"
           />

@@ -65,7 +65,7 @@ async function handleLogin() {
             v-model="email"
             type="email"
             class="auth-input"
-            placeholder="curator@ut-cinema.com"
+            placeholder="curator@vmk-cinema.com"
             required
             autocomplete="email"
           />

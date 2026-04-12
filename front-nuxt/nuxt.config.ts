@@ -22,7 +22,7 @@ export default defineNuxtConfig({
     apiUrlInternal: process.env.NUXT_API_URL_INTERNAL || 'http://127.0.0.1:8000',
     public: {
       apiBase: process.env.NUXT_PUBLIC_API_URL || 'http://204.168.252.153:8000',
-      socketUrl: process.env.NUXT_PUBLIC_SOCKET_URL || 'http://204.168.252.153:3001'
+      socketUrl: process.env.NUXT_PUBLIC_SOCKET_URL || 'http://204.168.252.153:3000'
     }
   },
   css: [
