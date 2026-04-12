@@ -2,12 +2,14 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { io } from 'socket.io-client'
 import { useAdminStore } from '@/stores/useAdminStore'
+import { useSwal } from '~/composables/useSwal'
 
 /**
  * ══ ESTADO Y CONFIGURACIÓN ══
  */
 const adminStore = useAdminStore()
 const runtimeConfig = useRuntimeConfig()
+const Swal = useSwal()
 
 // Conexión en tiempo real
 let socketInstance: any = null
@@ -148,7 +150,7 @@ async function enviarFormularioDeSesion() {
       elEnvioFueExitoso.value = false 
     }, 3000)
   } else {
-    alert('No se pudo crear la sesión. Por favor, revisa los datos.')
+    Swal.error('Error', 'No se pudo crear la sesión. Por favor, revisa los datos.', 'xmark')
   }
 }
 

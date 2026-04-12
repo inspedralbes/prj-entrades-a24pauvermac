@@ -4,10 +4,12 @@ import { useBookingStore } from '~/stores/useBookingStore'
 import { useAuthStore } from '~/stores/useAuthStore'
 import { FontAwesomeIcon } from '@fortawesome/vue-fontawesome'
 import { loadStripe } from '@stripe/stripe-js'
+import { useSwal } from '~/composables/useSwal'
 
 // 1. Invocamos nuestro plugin secreto .client ("walkie talkie" hacia Node)
 const nuxtApp = useNuxtApp()
 const $socket = nuxtApp.$socket
+const Swal = useSwal()
 
 const route = useRoute()
 const movieId = route.params.id
@@ -130,6 +132,34 @@ function volverAlFormulario() {
   if ($socket) { $socket.emit('liberar_asiento', { screening_id: sesionSeleccionada.value.id, asiento_id: -1 }) }
 }
 
+const HEARTBEAT_INTERVAL_MS = 30000
+let intervaloHeartbeat = null
+
+function iniciarHeartbeat() {
+  if (intervaloHeartbeat) return
+
+  intervaloHeartbeat = setInterval(() => {
+    const misAsientos = gestorDeReservas.selectedSeats
+    if (misAsientos.length === 0) return
+
+    if ($socket && sesionSeleccionada.value) {
+      for (const asiento_id of misAsientos) {
+        $socket.emit('heartbeat_asiento', {
+          screening_id: sesionSeleccionada.value.id,
+          asiento_id
+        })
+      }
+    }
+  }, HEARTBEAT_INTERVAL_MS)
+}
+
+function detenerHeartbeat() {
+  if (intervaloHeartbeat) {
+    clearInterval(intervaloHeartbeat)
+    intervaloHeartbeat = null
+  }
+}
+
 onMounted(() => {
   if (!$socket) return
 
@@ -138,7 +168,7 @@ onMounted(() => {
   })
 
   $socket.on('conflicto_asiento', (asiento_id) => {
-    alert('¡Uy! Ese asiento justo acaba de ser agarrado por otra persona ahora mismo.')
+    Swal.warning('Asiento no disponible', 'Este asiento acaba de ser reservado por otro cliente.', 'userLock')
     gestorDeReservas.addLockedSeat(asiento_id)
   })
 
@@ -149,6 +179,8 @@ onMounted(() => {
   $socket.on('asiento_liberado', (asiento_id) => {
     gestorDeReservas.releaseLockedSeat(asiento_id)
   })
+
+  iniciarHeartbeat()
 })
 
 onUnmounted(() => {
@@ -158,6 +190,7 @@ onUnmounted(() => {
     $socket.off('asiento_bloqueado_por_otro')
     $socket.off('asiento_liberado')
   }
+  detenerHeartbeat()
   gestorDeReservas.clearCart()
 })
 
@@ -200,7 +233,7 @@ function hacerClicEnAsiento(asiento_id) {
   const yaEstabaVerde = esAsientoSeleccionado(asiento_id)
 
   if (yaEstabaVerde === false && gestorDeReservas.totalSeats >= entradasSeleccionadas.value) {
-    alert(`Solo has pagado por ${entradasSeleccionadas.value} entradas. Deselecciona algún asiento verde primero.`)
+    Swal.warning('Limite alcanzado', `Solo has pagado por ${entradasSeleccionadas.value} entradas. Deselecciona algún asiento primero.`, 'warning')
     return
   }
 
@@ -254,7 +287,7 @@ function iniciarTemporizador() {
       tiempoRestante.value--
     } else {
       detenerTemporizador()
-      alert('⚠️ El tiempo de reserva (5 min) ha expirado. Hemos liberado tus butacas para otros clientes.')
+      Swal.warning('Tiempo agotado', 'El tiempo de reserva (5 min) ha expirado. Hemos liberado tus butacas para otros clientes.', 'clock')
       mostrarPasarelaStripe.value = false
       volverAlFormulario()
     }
@@ -285,7 +318,7 @@ async function iniciarProcesoDePago() {
       formularioTarjeta.mount('#pasarela-stripe-contenedor')
     }, 200)
   } else {
-    alert('Error crítico: El backend (Laravel) no nos dio autorización para abrir la pasarela.')
+    Swal.error('Error', 'El backend no nos dio autorización para abrir la pasarela de pago.', 'xmark')
   }
 
   procesandoPago.value = false
@@ -305,7 +338,7 @@ async function generarTicket() {
   const { data, error } = await CommunicationManager.generateTicket(bookingData)
 
   if (error.value) {
-    alert('Error al generar el ticket: ' + (error.value?.data?.message || 'Error desconocido'))
+    Swal.error('Error al generar ticket', 'Error al generar el ticket: ' + (error.value?.data?.message || 'Error desconocido'), 'xmark')
     return
   }
 
@@ -326,11 +359,11 @@ async function confirmarElPagoFinal() {
   })
 
   if (resultadoDeStripe.error) {
-    alert('⚠️ Stripe ha rechazado la operación: ' + resultadoDeStripe.error.message)
+    Swal.error('Error de pago', 'Stripe ha rechazado la operación: ' + resultadoDeStripe.error.message, 'creditCard')
     procesandoPago.value = false
   } else {
     detenerTemporizador()
-    alert('✅ ¡PAGO DE PRUEBA REALIZADO CON ÉXITO! Las entradas son tuyas.')
+    Swal.success('Pago realizado', 'Tu pago ha sido procesado con éxito. Las entradas son tuyas.', 'check')
     mostrarPasarelaStripe.value = false
     procesandoPago.value = false
     
