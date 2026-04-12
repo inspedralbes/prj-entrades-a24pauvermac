@@ -773,7 +773,7 @@ function cancelarPagoManualmente() {
 
 /* MODAL STRIPE */
 .modal-stripe-fondo { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 9999; backdrop-filter: blur(6px); }
-.modal-stripe-contenido { background: var(--color-surface-container-lowest); padding: var(--spacing-lg); border-radius: var(--radius-sm); width: 460px; color: var(--color-on-surface); box-shadow: 0 40px 80px rgba(0,0,0,0.25); }
+.modal-stripe-contenido { background: var(--color-surface-container-lowest); padding: var(--spacing-lg); border-radius: var(--radius-sm); width: 460px; color: var(--color-on-surface); box-shadow: 0 40px 80px rgba(0,0,0,0.25); max-height: 90vh; overflow-y: auto; }
 .temporizador-alerta { background: var(--color-surface-container-low); padding: 10px var(--spacing-md); border-radius: var(--radius-sm); text-align: center; margin-bottom: var(--spacing-sm); font-size: 0.75rem; color: var(--color-on-surface-muted); }
 .contenedor-caja-fuerte { min-height: 220px; padding: var(--spacing-sm) 0; }
 .modal-botones { display: flex; gap: var(--spacing-sm); margin-top: var(--spacing-md); align-items: stretch; }
