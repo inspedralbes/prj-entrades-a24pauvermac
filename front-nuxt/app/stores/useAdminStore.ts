@@ -106,6 +106,13 @@ export const useAdminStore = defineStore('admin', {
     },
 
     /**
+     * Actualiza el contador de asientos vendidos (mandado por Sockets cuando hay venta confirmada)
+     */
+    updateSeatsSold(count: number) {
+      this.realTimePanel.seatsSold = count;
+    },
+
+    /**
      * Cambiar la sesion que estamos observando en el panel "en vivo"
      */
     selectScreeningForRealTime(screeningId: number) {

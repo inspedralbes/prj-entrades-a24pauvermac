@@ -40,4 +40,8 @@ return [
         'token' => env('TMDB_TOKEN'),
     ],
 
+    'nodejs' => [
+        'url' => env('NODEJS_URL', 'http://node-app:3000'),
+    ],
+
 ];

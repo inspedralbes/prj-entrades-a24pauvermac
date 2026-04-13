@@ -12,6 +12,8 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class TicketController extends Controller
 {
@@ -132,6 +134,18 @@ class TicketController extends Controller
                 'seats_id' => $validated['seats'],
                 'reservation_code' => $reservationCode,
             ]);
+
+            // Notificar a Node.js para actualizar el panel de admin en tiempo real
+            try {
+                $nodeUrl = config('services.nodejs.url', 'http://node-app:3000');
+                Http::timeout(2)->post($nodeUrl . '/api/venta-confirmada', [
+                    'screening_id' => $screening->id,
+                    'seats_count' => count($validated['seats'])
+                ]);
+            } catch (\Exception $e) {
+                // No bloqueamos la respuesta si falla la notificación a Node
+                \Log::warning('No se pudo notificar a Node.js: ' . $e->getMessage());
+            }
 
             // Devolver la URL del PDF
             $pdfUrl = asset('storage/' . $path);

@@ -6,6 +6,29 @@ import redisClient from './redisClient.js';
 
 const app = express();
 app.use(cors());
+app.use(express.json());
+
+// Endpoint para que Laravel notifique ventas confirmadas (actualiza el panel de admin en tiempo real)
+app.post('/api/venta-confirmada', async (req, res) => {
+  const { screening_id, seats_count } = req.body;
+
+  if (!screening_id || !seats_count) {
+    return res.status(400).json({ error: 'Faltan datos: screening_id y seats_count' });
+  }
+
+  const nombreSalaAdmin = `sesion_${screening_id}_admin`;
+  
+  // Emitir evento a los admins monitorizando esta sesión
+  io.to(nombreSalaAdmin).emit('seats_sold_update', {
+    screening_id,
+    seats_count,
+    timestamp: Date.now()
+  });
+
+  console.log(`💰 Venta confirmada: ${seats_count} asientos en sesión ${screening_id}`);
+  
+  res.json({ success: true });
+});
 
 const httpServer = createServer(app);
 

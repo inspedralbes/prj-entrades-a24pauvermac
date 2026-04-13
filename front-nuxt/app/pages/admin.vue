@@ -82,6 +82,14 @@ onMounted(async () => {
   socketInstance.on('admin_temporales_update', (totalAsientosBloqueados: number) => {
     adminStore.updateTemporarilyLocked(totalAsientosBloqueados)
   })
+
+  // Actualización de asientos vendidos (cuando se confirma una venta)
+  socketInstance.on('seats_sold_update', (data: { screening_id: number, seats_count: number }) => {
+    if (data.screening_id === idSesionSeleccionadaParaMonitoreo.value) {
+      const nuevoTotal = adminStore.realTimePanel.seatsSold + data.seats_count
+      adminStore.updateSeatsSold(nuevoTotal)
+    }
+  })
 })
 
 onUnmounted(() => {
@@ -190,7 +198,7 @@ function formatearFechaParaUsuario(cadenaFecha: string) {
   <div class="adm-page">
 
     <header class="adm-header">
-      <span class="adm-logo text-label">UT·Cinema Admin</span>
+      <span class="adm-logo text-label">VMK Cinema Admin</span>
       <nav class="adm-nav">
         <a href="#" class="adm-nav-link text-label adm-nav-active">Dashboard</a>
         <a href="#" class="adm-nav-link text-label">Sesiones</a>
@@ -387,7 +395,7 @@ function formatearFechaParaUsuario(cadenaFecha: string) {
     </div>
 
     <footer class="adm-footer">
-      <span class="text-label adm-footer-brand">© {{ new Date().getFullYear() }} UT·Cinema Admin Interface.</span>
+      <span class="text-label adm-footer-brand">© {{ new Date().getFullYear() }} VMK Cinema Admin Interface.</span>
       <div class="adm-footer-links">
         <a href="#" class="text-label">Privacidad</a>
         <a href="#" class="text-label">Términos legales</a>
