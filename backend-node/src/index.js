@@ -10,14 +10,25 @@ app.use(express.json());
 
 // Endpoint para que Laravel notifique ventas confirmadas (actualiza el panel de admin en tiempo real)
 app.post('/api/venta-confirmada', async (req, res) => {
-  const { screening_id, seats_count } = req.body;
+  const { screening_id, seats_count, seats } = req.body;
 
   if (!screening_id || !seats_count) {
     return res.status(400).json({ error: 'Faltan datos: screening_id y seats_count' });
   }
 
   const nombreSalaAdmin = `sesion_${screening_id}_admin`;
-  
+  const setKey = getSetKey(screening_id);
+
+  // Limpiar los asientos del set de Redis (ya comprados, no bloqueados)
+  if (seats && Array.isArray(seats)) {
+    for (const seatId of seats) {
+      const bloqueoKey = getBloqueoKey(screening_id, seatId);
+      await redisClient.sRem(setKey, String(seatId));
+      await redisClient.del(bloqueoKey);
+      console.log(`🧹 Asiento ${seatId} limpiado de Redis tras compra`);
+    }
+  }
+
   // Emitir evento a los admins monitorizando esta sesión
   io.to(nombreSalaAdmin).emit('seats_sold_update', {
     screening_id,
